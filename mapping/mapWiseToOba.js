@@ -57,20 +57,22 @@ const normalizeContributor = (person, fallbackRole = "") => {
 };
 
 const availabilityLabel = (item) => {
-  const status = text(item?.status);
-  const code = text(item?.statusCode);
+  const status = text(item?.effectiveStatus || item?.status);
+  const code = text(item?.effectiveStatusCode || item?.statusCode);
 
   if (status === "AVAILABLE") return "Aanwezig";
+  if (status === "ON_LOAN") return "Uitgeleend";
   if (status === "NOT_AVAILABLE" && code === "BU") return "Uitgeleend";
   if (status === "NOT_AVAILABLE") return "Niet beschikbaar";
   return status || "Onbekend";
 };
 
 const availabilityTone = (item) => {
-  const status = text(item?.status);
-  const code = text(item?.statusCode);
+  const status = text(item?.effectiveStatus || item?.status);
+  const code = text(item?.effectiveStatusCode || item?.statusCode);
 
   if (status === "AVAILABLE") return "available";
+  if (status === "ON_LOAN") return "loaned";
   if (status === "NOT_AVAILABLE" && code === "BU") return "loaned";
   return "unavailable";
 };
@@ -140,7 +142,7 @@ const buildDetails = (title, publication, physical, contributors) => {
     .map(([label, value]) => ({ label, value }));
 };
 
-export function mapWiseToOba({ title, availability, summary }) {
+export function mapWiseToOba({ title, availability, summary, itemInformation }) {
   const publication = splitImprint(title.imprint);
   const physical = parsePhysicalDescription(title.annotationCollation);
   const relatedItems = asArray(summary?.items);
@@ -163,31 +165,28 @@ export function mapWiseToOba({ title, availability, summary }) {
 
   const specs = buildSpecs(title, publication, physical);
   const availabilityItems = asArray(availability?.[0]?.availability);
-  const firstAvailability = availabilityItems[0];
+  const itemRows = asArray(itemInformation);
 
-  const practicalRows = (relatedItems.length ? relatedItems : [title]).slice(0, 6).map((item, index) => {
-    const itemAvailability =
-      availabilityItems[index % Math.max(availabilityItems.length, 1)] || firstAvailability || {};
+  const practicalRowsSource = itemRows.length ? itemRows : availabilityItems;
+
+  const practicalRows = practicalRowsSource.slice(0, 50).map((item, index) => {
+    const fallbackAvailability = availabilityItems[index % Math.max(availabilityItems.length, 1)] || {};
 
     return {
-      key: item.id || `${item.title}-${index}`,
-      location: "OBA collectie",
-      edition: first(item.edition, title.annotationEdition, title.edition, publication.publisher),
-      place: first(
-        publication.place && publication.publisher ? `${publication.place} / ${publication.publisher}` : "",
-        title.imprint
-      ),
-      shelf: first(
-        asArray(title.titleSeries).map((series) => series.description).filter(Boolean).join(" / "),
-        title.readingLevel,
-        title.audience?.description,
-        "Collectie"
-      ),
-      status: availabilityLabel(itemAvailability),
-      tone: availabilityTone(itemAvailability),
-      statusNote: itemAvailability?.statusCode ? `${itemAvailability.statusCode}` : "",
+      key: item.id || `${item.branchId || "row"}-${index}`,
+      location: item.branchName || item.branchId || "Onbekende locatie",
+      edition: first(title.annotationEdition, title.edition, currentRecord?.edition, ""),
+      place: item.subLocation || item.shelfDescription || item.location || "",
+      shelf: item.callNumber || item.shelfDescription || "",
+      status: availabilityLabel(itemRows.length ? item : fallbackAvailability),
+      tone: availabilityTone(itemRows.length ? item : fallbackAvailability),
+      statusNote: text(item.effectiveStatusCode || fallbackAvailability.statusCode),
     };
   });
+
+  const availableCount = itemRows.length
+    ? itemRows.filter((item) => item.effectiveStatus === "AVAILABLE").length
+    : availabilityItems.filter((item) => item.status === "AVAILABLE").length;
 
   return {
     title: title.title,
@@ -200,8 +199,8 @@ export function mapWiseToOba({ title, availability, summary }) {
     publication,
     physical,
     availabilitySummary: {
-      label: availabilityItems.some((item) => item.status === "AVAILABLE") ? "aanwezig" : "niet beschikbaar",
-      countText: `In ${availabilityItems.length || 1} locaties`,
+      label: availableCount > 0 ? "aanwezig" : "niet beschikbaar",
+      countText: `In ${practicalRows.length || 1} locaties`,
       holdAllowed: Boolean(availability?.[0]?.holdAllowed || title.allowHolds),
     },
     practicalRows,
@@ -210,6 +209,7 @@ export function mapWiseToOba({ title, availability, summary }) {
       title,
       availability,
       summary,
+      itemInformation,
       currentRecord,
     },
   };
