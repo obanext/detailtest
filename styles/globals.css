@@ -1,0 +1,27 @@
+body {
+  font-family: Arial;
+}
+
+.container {
+  max-width: 900px;
+  margin: auto;
+}
+
+.header {
+  display: flex;
+  gap: 20px;
+}
+
+.cover {
+  width: 120px;
+}
+
+section {
+  margin-top: 30px;
+}
+
+.availability {
+  background: #eee;
+  padding: 8px;
+  margin-top: 5px;
+}
