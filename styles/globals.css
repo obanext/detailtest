@@ -1,4 +1,176 @@
 body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  color: #222;
+  background: #f6f6f6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 20px 64px;
+}
+
+.loading {
+  padding: 40px;
+}
+
+.header {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 24px;
+  align-items: start;
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 24px;
+}
+
+.coverCol {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cover {
+  width: 100%;
+  max-width: 180px;
+  display: block;
+  border: 1px solid #ddd;
+}
+
+.heroContent h1 {
+  margin: 0 0 8px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #666;
+}
+
+.subtitle {
+  margin-top: 0;
+  color: #444;
+}
+
+.lead {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.flagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flag {
+  display: inline-block;
+  padding: 4px 8px;
+  background: #eee;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+section {
+  margin-top: 24px;
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 24px;
+}
+
+section h2 {
+  margin-top: 0;
+}
+
+.metaList {
+  margin: 0;
+}
+
+.metaRow {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eee;
+}
+
+.metaRow:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.metaRow dt {
+  font-weight: 700;
+}
+
+.metaRow dd {
+  margin: 0;
+}
+
+.plainList,
+.tagList {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.tagList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding-left: 0;
+}
+
+.tagList li {
+  padding: 6px 10px;
+  background: #eee;
+  border-radius: 999px;
+}
+
+.availabilityList {
+  display: grid;
+  gap: 12px;
+}
+
+.availability {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: #f2f2f2;
+  border: 1px solid #ddd;
+  padding: 12px;
+}
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.45;
+  background: #f7f7f7;
+  border: 1px solid #ddd;
+  padding: 12px;
+  overflow: auto;
+}
+
+@media (max-width: 800px) {
+  .header {
+    grid-template-columns: 1fr;
+  }
+
+  .metaRow {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+body {
   font-family: Arial;
 }
 
