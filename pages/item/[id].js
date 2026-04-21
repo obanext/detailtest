@@ -4,7 +4,6 @@ import { mapWiseToOba } from "../../mapping/mapWiseToOba";
 
 function SpecsCard({ title, items }) {
   if (!items?.length) return null;
-
   return (
     <div className="infoCard">
       <h3>{title}</h3>
@@ -19,7 +18,6 @@ function SpecsCard({ title, items }) {
 
 function SubjectCard({ title, items }) {
   if (!items?.length) return null;
-
   return (
     <div className="infoCard small">
       <h3>{title}</h3>
@@ -42,18 +40,19 @@ export default function Page() {
   const router = useRouter();
   const { id } = router.query;
   const [data, setData] = useState(null);
+  const [raw, setRaw] = useState(null);
 
   useEffect(() => {
     if (!id) return;
-
     fetch(`/api/wise?id=${id}`)
       .then((r) => r.json())
-      .then((res) => setData(mapWiseToOba(res)));
+      .then((res) => {
+        setRaw(res); // volledige ruwe output bewaren
+        setData(mapWiseToOba(res));
+      });
   }, [id]);
 
-  if (!data) {
-    return <div className="pageShell loading">Loading...</div>;
-  }
+  if (!data) return <div className="pageShell loading">Loading...</div>;
 
   return (
     <div className="pageShell">
@@ -86,7 +85,8 @@ export default function Page() {
             <p className="availabilityIntro">
               <span className="greenDot" />
               <span>
-                {data.availabilitySummary.label} {data.availabilitySummary.countText.toLowerCase()}
+                {data.availabilitySummary.label}{" "}
+                {data.availabilitySummary.countText.toLowerCase()}
               </span>
             </p>
 
@@ -165,6 +165,13 @@ export default function Page() {
             ))}
           </div>
         </section>
+
+        {raw ? (
+          <section className="rawSection">
+            <h2>Ruwe API-output</h2>
+            <pre className="rawBlock">{JSON.stringify(raw, null, 2)}</pre>
+          </section>
+        ) : null}
       </main>
     </div>
   );
