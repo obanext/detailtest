@@ -166,24 +166,18 @@ export function mapWiseToOba({ title, availability, summary, itemInformation }) 
 
   const specs = buildSpecs(title, publication, physical);
   const availabilityItems = asArray(availability?.[0]?.availability);
-  const itemRows = asArray(itemInformation);
+  const itemRows = Array.isArray(itemInformation) ? itemInformation.filter(Boolean) : [];
 
-  const practicalRowsSource = itemRows.length ? itemRows : availabilityItems;
-
-  const practicalRows = practicalRowsSource.slice(0, 50).map((item, index) => {
-    const fallbackAvailability = availabilityItems[index % Math.max(availabilityItems.length, 1)] || {};
-
-    return {
-      key: item.id || `${item.branchId || "row"}-${index}`,
-      location: item.branchName || item.branchId || "Onbekende locatie",
-      edition: first(title.annotationEdition, title.edition, currentRecord?.edition, ""),
-      place: item.subLocation || item.shelfDescription || item.location || "",
-      shelf: item.callNumber || item.shelfDescription || "",
-      status: availabilityLabel(itemRows.length ? item : fallbackAvailability),
-      tone: availabilityTone(itemRows.length ? item : fallbackAvailability),
-      statusNote: text(item.effectiveStatusCode || fallbackAvailability.statusCode),
-    };
-  });
+  const practicalRows = itemRows.slice(0, 50).map((item, index) => ({
+    key: item.id || `${item.branchId || "row"}-${index}`,
+    location: item.branchName || item.branchId || "Onbekende locatie",
+    edition: first(title.annotationEdition, title.edition, currentRecord?.edition, ""),
+    place: item.subLocation || item.shelfDescription || item.location || "",
+    shelf: item.callNumber || item.shelfDescription || "",
+    status: availabilityLabel(item),
+    tone: availabilityTone(item),
+    statusNote: text(item.effectiveStatusCode),
+  }));
 
   const availableCount = itemRows.length
     ? itemRows.filter((item) => item.effectiveStatus === "AVAILABLE").length
