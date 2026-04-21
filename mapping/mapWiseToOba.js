@@ -142,26 +142,28 @@ const buildDetails = (title, publication, physical, contributors) => {
     .map(([label, value]) => ({ label, value }));
 };
 
-export function mapWiseToOba({ title, availability, summary, itemInformation }) {
-  const publication = splitImprint(title.imprint);
-  const physical = parsePhysicalDescription(title.annotationCollation);
-  const relatedItems = asArray(summary?.items);
-  const currentId = String(title.id || "");
-  const currentRecord = relatedItems.find((item) => String(item.id) === currentId);
+export function mapWiseToOba({ title, availability, summary, branch }) {
+  const availabilityEntry = Array.isArray(availability) ? availability[0] : null;
 
-  const contributors = unique(
-    [
-      normalizeContributor(title.author, "Auteur"),
-      ...asArray(title.collaborators).map((person) => normalizeContributor(person)),
-    ]
-      .filter(Boolean)
-      .map((item) => JSON.stringify(item))
-  ).map((item) => JSON.parse(item));
-
-  const subjects = unique([
-    ...asArray(title.subjects).map((item) => item.description),
-    ...asArray(title.subjectSchoolWise).map((item) => item.description),
-  ]);
+  return {
+    id: title.id,
+    title: title.title,
+    author: title.author?.description,
+    imprint: title.imprint,
+    isbn: title.isbn,
+    summary: title.contents,
+    image: title.imageUrls?.medium,
+    branch: branch
+      ? {
+          id: branch.id,
+          name: branch.description || branch.name || branch.libraryName || ""
+        }
+      : null,
+    availability: availabilityEntry?.availability || [],
+    holdAllowed: availabilityEntry?.holdAllowed ?? false,
+    related: summary?.items || []
+  };
+}
 
   const specs = buildSpecs(title, publication, physical);
   const availabilityItems = asArray(availability?.[0]?.availability);
