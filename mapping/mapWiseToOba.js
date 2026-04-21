@@ -1,95 +1,76 @@
-const asArray = (value) => {
-  if (!value) return [];
-  return Array.isArray(value) ? value.filter(Boolean) : [value].filter(Boolean);
-};
+const asArray = (v) => (!v ? [] : Array.isArray(v) ? v.filter(Boolean) : [v].filter(Boolean));
+const text = (v) => (typeof v === "string" ? v.trim() : v || "");
+const first = (...vs) =>
+  vs.find((v) => (Array.isArray(v) ? v.length : v !== undefined && v !== null && String(v).trim()));
+const unique = (xs) => [...new Set(xs.filter(Boolean))];
 
-const text = (value) => (typeof value === "string" ? value.trim() : value || "");
+const AMSTELLAND_BRANCHES = ["1000", "1001", "1002", "1003", "1004"];
 
-const first = (...values) =>
-  values.find((value) => {
-    if (Array.isArray(value)) return value.length > 0;
-    return value !== undefined && value !== null && String(value).trim() !== "";
-  });
-
-const unique = (items) => [...new Set(items.filter(Boolean))];
-
-const splitImprint = (imprint = "") => {
-  const cleaned = text(imprint);
+const splitImprint = (imp = "") => {
+  const cleaned = text(imp);
   if (!cleaned) return { place: "", publisher: "", year: "" };
-
   const [placePart = "", restPart = ""] = cleaned.split(":");
   const place = text(placePart);
   const rest = text(restPart);
-
-  if (!rest) {
-    return { place, publisher: "", year: "" };
-  }
-
-  const yearMatch = rest.match(/(\d{4})/);
-  const year = yearMatch?.[1] || "";
+  if (!rest) return { place, publisher: "", year: "" };
+  const year = rest.match(/(\d{4})/)?.[1] || "";
   const publisher = text(rest.replace(/,?\s*\d{4}.*/, ""));
-
   return { place, publisher, year };
 };
 
-const parsePhysicalDescription = (value = "") => {
-  const cleaned = text(value);
+const parsePhysicalDescription = (val = "") => {
+  const cleaned = text(val);
   if (!cleaned) return { pages: "", illustrations: "", size: "", full: "" };
-
   const [pagesPart = "", rest = ""] = cleaned.split(":");
-  const [illustrationsPart = "", sizePart = ""] = rest.split(";");
-
+  const [illusPart = "", sizePart = ""] = rest.split(";");
   return {
     pages: text(pagesPart),
-    illustrations: text(illustrationsPart),
+    illustrations: text(illusPart),
     size: text(sizePart),
     full: cleaned,
   };
 };
 
-const normalizeContributor = (person, fallbackRole = "") => {
-  if (!person) return null;
-  return {
-    name: person.description || "",
-    role: first(person.localizedType, person.addition, person.type, fallbackRole) || "",
-    qualifier: person.qualifier || "",
-  };
+const normalizeContributor = (p, fallback = "") =>
+  p
+    ? {
+        name: p.description || "",
+        role: first(p.localizedType, p.addition, p.type, fallback) || "",
+        qualifier: p.qualifier || "",
+      }
+    : null;
+
+const availabilityLabel = (it) => {
+  const st = text(it?.effectiveStatus || it?.status);
+  const code = text(it?.effectiveStatusCode || it?.statusCode);
+  if (st === "AVAILABLE") return "Aanwezig";
+  if (st === "ON_LOAN") return "Uitgeleend";
+  if (st === "NOT_AVAILABLE" && code === "BU") return "Uitgeleend";
+  if (st === "NOT_AVAILABLE") return "Niet beschikbaar";
+  return st || "Onbekend";
 };
 
-const availabilityLabel = (item) => {
-  const status = text(item?.effectiveStatus || item?.status);
-  const code = text(item?.effectiveStatusCode || item?.statusCode);
-
-  if (status === "AVAILABLE") return "Aanwezig";
-  if (status === "ON_LOAN") return "Uitgeleend";
-  if (status === "NOT_AVAILABLE" && code === "BU") return "Uitgeleend";
-  if (status === "NOT_AVAILABLE") return "Niet beschikbaar";
-  return status || "Onbekend";
-};
-
-const availabilityTone = (item) => {
-  const status = text(item?.effectiveStatus || item?.status);
-  const code = text(item?.effectiveStatusCode || item?.statusCode);
-
-  if (status === "AVAILABLE") return "available";
-  if (status === "ON_LOAN") return "loaned";
-  if (status === "NOT_AVAILABLE" && code === "BU") return "loaned";
+const availabilityTone = (it) => {
+  const st = text(it?.effectiveStatus || it?.status);
+  const code = text(it?.effectiveStatusCode || it?.statusCode);
+  if (st === "AVAILABLE") return "available";
+  if (st === "ON_LOAN") return "loaned";
+  if (st === "NOT_AVAILABLE" && code === "BU") return "loaned";
   return "unavailable";
 };
 
-const buildSpecs = (title, publication, physical) => {
-  return unique([
+const buildSpecs = (title, pub, phys) =>
+  unique([
     title.media?.description,
-    asArray(title.language).map((item) => item.description).join(", "),
-    publication.publisher,
-    physical.full,
-    asArray(title.titleSeries).map((item) => item.description).join(", "),
+    asArray(title.language).map((x) => x.description).join(", "),
+    pub.publisher,
+    phys.full,
+    asArray(title.titleSeries).map((x) => x.description).join(", "),
     title.audience?.description || (title.youth ? "Jeugd" : ""),
   ]).filter(Boolean);
-};
 
-const buildDetails = (title, publication, physical, contributors) => {
-  const mainAuthor = title.author;
+const buildDetails = (title, pub, phys, contributors) => {
+  const main = title.author;
   const secondary = asArray(title.collaborators)[0];
 
   return [
@@ -99,7 +80,7 @@ const buildDetails = (title, publication, physical, contributors) => {
     [
       "Taal publicatie",
       asArray(title.language)
-        .map((item) => `${item.code} (${item.description})`)
+        .map((x) => `${x.code} (${x.description})`)
         .join(", "),
     ],
     ["Hoofdtitel", title.mainTitle || title.title],
@@ -107,71 +88,71 @@ const buildDetails = (title, publication, physical, contributors) => {
       "Algemene materiaalaanduiding",
       `${title.titleCategory || ""} [${title.media?.description || ""}]`.trim(),
     ],
-    ["Eerste verantwoordelijke", mainAuthor?.description],
-    [
-      "Titel - Volgende verantwoordelijken",
-      contributors.slice(1).map((item) => item.name).join(", "),
-    ],
-    ["Plaats van uitgave", publication.place],
-    ["Uitgever", publication.publisher],
-    ["Jaar van uitgave", first(title.publicationYear, publication.year)],
-    ["Pagina's", physical.pages],
-    ["Collatie - Illustraties", physical.illustrations],
-    ["Centimeters", physical.size],
-    ["Serietitel", asArray(title.titleSeries).map((item) => item.description).join(", ")],
+    ["Eerste verantwoordelijke", main?.description],
+    ["Titel - Volgende verantwoordelijken", contributors.slice(1).map((x) => x.name).join(", ")],
+    ["Plaats van uitgave", pub.place],
+    ["Uitgever", pub.publisher],
+    ["Jaar van uitgave", first(title.publicationYear, pub.year)],
+    ["Pagina's", phys.pages],
+    ["Collatie - Illustraties", phys.illustrations],
+    ["Centimeters", phys.size],
+    ["Serietitel", asArray(title.titleSeries).map((x) => x.description).join(", ")],
     [
       "Volume",
       asArray(title.titleSeries)
-        .map((item) => item.number || item.addition)
+        .map((x) => x.number || x.addition)
         .filter(Boolean)
         .join(", "),
     ],
-    ["Auteur Functie", mainAuthor?.addition],
-    ["Auteur Achternaam", mainAuthor?.description?.split(",")[0]],
-    ["Auteur Voornaam", mainAuthor?.description?.split(",").slice(1).join(",").trim()],
-    ["Trefwoord - Hoofd geleding", asArray(title.subjects).map((item) => item.description).join(", ")],
-    ["Genre - Code", asArray(title.genre).map((item) => item.description).join(", ")],
+    ["Auteur Functie", main?.addition],
+    ["Auteur Achternaam", main?.description?.split(",")[0]],
+    ["Auteur Voornaam", main?.description?.split(",").slice(1).join(",").trim()],
+    ["Trefwoord - Hoofd geleding", asArray(title.subjects).map((x) => x.description).join(", ")],
+    ["Genre - Code", asArray(title.genre).map((x) => x.description).join(", ")],
     ["Auteur - secundaire - Functie", secondary?.addition],
     ["Auteur - secundaire - Achternaam", secondary?.description?.split(",")[0]],
-    ["Auteur - secundaire - Voornaam", secondary?.description?.split(",").slice(1).join(",").trim()],
+    [
+      "Auteur - secundaire - Voornaam",
+      secondary?.description?.split(",").slice(1).join(",").trim(),
+    ],
     ["Bestelnummer NBD Nummer", title.libraryRecommendation?.match(/\b(20\d{8})\b/)?.[1]],
     ["Samenvatting - Tekst", title.contents],
-    ["Prod country", "ne"],
+    ["Prod country", "dit veld is niet aanwezig"],
     ["Editie", first(title.annotationEdition, title.edition)],
   ]
-    .filter(([, value]) => value && String(value).trim() !== "")
+    .filter(([, v]) => v && String(v).trim())
     .map(([label, value]) => ({ label, value }));
 };
 
 export function mapWiseToOba({ title, availability, summary, itemInformation }) {
-  const publication = splitImprint(title.imprint);
-  const physical = parsePhysicalDescription(title.annotationCollation);
-  const relatedItems = asArray(summary?.items);
+  const pub = splitImprint(title.imprint);
+  const phys = parsePhysicalDescription(title.annotationCollation);
+  const rel = asArray(summary?.items);
   const currentId = String(title.id || "");
-  const currentRecord = relatedItems.find((item) => String(item.id) === currentId);
+  const currentRec = rel.find((i) => String(i.id) === currentId);
 
   const contributors = unique(
     [
       normalizeContributor(title.author, "Auteur"),
-      ...asArray(title.collaborators).map((person) => normalizeContributor(person)),
+      ...asArray(title.collaborators).map((p) => normalizeContributor(p)),
     ]
       .filter(Boolean)
-      .map((item) => JSON.stringify(item))
-  ).map((item) => JSON.parse(item));
+      .map((x) => JSON.stringify(x))
+  ).map((x) => JSON.parse(x));
 
   const subjects = unique([
-    ...asArray(title.subjects).map((item) => item.description),
-    ...asArray(title.subjectSchoolWise).map((item) => item.description),
+    ...asArray(title.subjects).map((x) => x.description),
+    ...asArray(title.subjectSchoolWise).map((x) => x.description),
   ]);
 
-  const specs = buildSpecs(title, publication, physical);
-  const availabilityItems = asArray(availability?.[0]?.availability);
-  const itemRows = Array.isArray(itemInformation) ? itemInformation.filter(Boolean) : [];
+  const specs = buildSpecs(title, pub, phys);
 
-  const practicalRows = itemRows.slice(0, 50).map((item, index) => ({
-    key: item.id || `${item.branchId || "row"}-${index}`,
-    location: item.branchName || item.branchId || "Onbekende locatie",
-    edition: first(title.annotationEdition, title.edition, currentRecord?.edition, ""),
+  const itemRows = asArray(itemInformation).filter((i) => AMSTELLAND_BRANCHES.includes(i.branchId));
+
+  const practicalRows = itemRows.slice(0, 50).map((item, idx) => ({
+    key: item.id || `${item.branchId}-${idx}`,
+    location: item.branchName || item.branchId,
+    edition: first(title.annotationEdition, title.edition, currentRec?.edition, ""),
     place: item.subLocation || item.shelfDescription || item.location || "",
     shelf: item.callNumber || item.shelfDescription || "",
     status: availabilityLabel(item),
@@ -179,33 +160,25 @@ export function mapWiseToOba({ title, availability, summary, itemInformation }) 
     statusNote: text(item.effectiveStatusCode),
   }));
 
-  const availableCount = itemRows.length
-    ? itemRows.filter((item) => item.effectiveStatus === "AVAILABLE").length
-    : availabilityItems.filter((item) => item.status === "AVAILABLE").length;
+  const availableCount = itemRows.filter((i) => i.effectiveStatus === "AVAILABLE").length;
 
   return {
     title: title.title,
     subtitle: title.subtitle || "",
-    authorLine: contributors.map((item) => item.name).join(", "),
+    authorLine: contributors.map((x) => x.name).join(", "),
     summary: first(title.contents, title.contentsSchoolWise, ""),
     image: first(title.imageUrls?.large, title.imageUrls?.medium, title.imageUrls?.small, ""),
     specs,
     subjects,
-    publication,
-    physical,
+    publication: pub,
+    physical: phys,
     availabilitySummary: {
       label: availableCount > 0 ? "aanwezig" : "niet beschikbaar",
       countText: `In ${practicalRows.length || 1} locaties`,
       holdAllowed: Boolean(availability?.[0]?.holdAllowed || title.allowHolds),
     },
     practicalRows,
-    details: buildDetails(title, publication, physical, contributors),
-    raw: {
-      title,
-      availability,
-      summary,
-      itemInformation,
-      currentRecord,
-    },
+    details: buildDetails(title, pub, phys, contributors),
+    raw: { title, availability, summary, itemInformation, currentRec },
   };
 }
