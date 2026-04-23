@@ -105,7 +105,10 @@ export default function Page() {
       ["Hoofdtitel", title],
       ["Algemene materiaalaanduiding", text(mapped?.misc?.material)],
       ["Eerste verantwoordelijke", author],
-      ["Titel - Volgende verantwoordelijken", text(mapped?.contributors?.secondary?.statement || mapped?.contributors?.secondary?.lastName)],
+      [
+        "Titel - Volgende verantwoordelijken",
+        text(mapped?.contributors?.secondary?.statement || mapped?.contributors?.secondary?.lastName),
+      ],
       ["Plaats van uitgave", text(mapped?.publication?.place?._text)],
       ["Uitgever", text(mapped?.publication?.publishers?.publisher?._text)],
       ["Jaar van uitgave", text(mapped?.publication?.year?._text)],
@@ -133,7 +136,10 @@ export default function Page() {
   const availabilityRows = useMemo(() => {
     return asArray(mapped?.["librarian-info"]?.record?.meta?.branches).map((branch, index) => ({
       key: `${getBranchField(branch, "b") || "row"}-${index}`,
-      location: getBranchField(branch, "locationName") || getBranchField(branch, "branchName") || getBranchField(branch, "s"),
+      location:
+        getBranchField(branch, "locationName") ||
+        getBranchField(branch, "branchName") ||
+        getBranchField(branch, "s"),
       place: getBranchField(branch, "m"),
       shelf: getBranchField(branch, "k"),
       status: getBranchField(branch, "status"),
@@ -172,56 +178,64 @@ export default function Page() {
 
   return (
     <div className="page">
+      <div className="header-image">
+        <img src="/header.JPG" alt="Header" />
+      </div>
+
       <div className="container detail-page">
-        <div className="hero">
-          <div className="hero-copy">
-            <h1 className="title">{title || shortTitle || "Onbekende titel"}</h1>
+        <div className="cover-large-wrapper">
+          {coverImage ? (
+            <img
+              src={coverImage}
+              className="cover-large-main"
+              alt={title || shortTitle || "Cover"}
+            />
+          ) : (
+            <div className="cover-placeholder">Geen cover</div>
+          )}
+        </div>
 
-            {subtitle && subtitle !== title && subtitle !== shortTitle ? (
-              <div className="subtitle">{subtitle}</div>
-            ) : null}
+        <div className="hero-copy hero-copy-standalone">
+          <h1 className="title">{title || shortTitle || "Onbekende titel"}</h1>
 
-            {author ? <div className="author-line">{author}</div> : null}
+          {subtitle && subtitle !== title && subtitle !== shortTitle ? (
+            <div className="subtitle">{subtitle}</div>
+          ) : null}
 
-            {summary ? <div className="summary-text">{summary}</div> : null}
+          {author ? <div className="author-line">{author}</div> : null}
 
-            <div className="card-grid top-cards">
-              <section className="info-card">
-                <h2>Specificaties</h2>
-                {topSpecs.length ? (
-                  <ul className="plain-list">
-                    {topSpecs.map((value, index) => (
-                      <li key={`${value}-${index}`}>{value}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <ul className="plain-list">
-                    <li>Geen specificaties beschikbaar</li>
-                  </ul>
-                )}
-              </section>
+          {summary ? <div className="summary-text">{summary}</div> : null}
 
-              <section className="info-card">
-                <h2>Onderwerpen</h2>
-                {subjects.length ? (
-                  <ul className="plain-list">
-                    {subjects.map((value, index) => (
-                      <li key={`${value}-${index}`}>{value}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <ul className="plain-list">
-                    <li>Geen onderwerpen beschikbaar</li>
-                  </ul>
-                )}
-              </section>
-            </div>
-          </div>
+          <div className="card-grid top-cards">
+            <section className="info-card">
+              <h2>Specificaties</h2>
+              {topSpecs.length ? (
+                <ul className="plain-list">
+                  {topSpecs.map((value, index) => (
+                    <li key={`${value}-${index}`}>{value}</li>
+                  ))}
+                </ul>
+              ) : (
+                <ul className="plain-list">
+                  <li>Geen specificaties beschikbaar</li>
+                </ul>
+              )}
+            </section>
 
-          <div className="hero-cover">
-            {coverImage ? (
-              <img src={coverImage} className="cover-large" alt={title || shortTitle || "Cover"} />
-            ) : null}
+            <section className="info-card">
+              <h2>Onderwerpen</h2>
+              {subjects.length ? (
+                <ul className="plain-list">
+                  {subjects.map((value, index) => (
+                    <li key={`${value}-${index}`}>{value}</li>
+                  ))}
+                </ul>
+              ) : (
+                <ul className="plain-list">
+                  <li>Geen onderwerpen beschikbaar</li>
+                </ul>
+              )}
+            </section>
           </div>
         </div>
 
