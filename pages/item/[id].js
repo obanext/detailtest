@@ -1,141 +1,320 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import { diffObjects } from "../../utils/diff";
 import { toCSV } from "../../utils/csv";
 
+const pretty = (value) => JSON.stringify(value, null, 2);
+
+const asArray = (value) =>
+  Array.isArray(value) ? value : value ? [value] : [];
+
+const text = (value) => {
+  if (typeof value === "string") return value.trim();
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
+const getBranchField = (branch, key) =>
+  asArray(branch?.branches).find((item) => item?._attributes?.key === key)?._text || "";
+
 export default function Page() {
-  const { query } = useRouter();
+  const router = useRouter();
+  const { id } = router.query;
+
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("availability");
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!query.id) return;
-    fetch(`/api/wise?id=${query.id}`)
-      .then((r) => r.json())
-      .then(setData);
-  }, [query.id]);
+    if (!router.isReady || !id) return;
 
-  if (!data) return <div className="container">Loading...</div>;
+    let isCancelled = false;
+    setError("");
+    setData(null);
 
-  const mapped = data.mapped || {};
+    fetch(`/api/wise?id=${encodeURIComponent(id)}`)
+      .then(async (response) => {
+        const json = await response.json().catch(() => null);
 
-  const title = mapped.titles?.title?._text;
-  const author = mapped.authors?.["main-author"]?._text;
-  const summary = mapped.summaries?.summary?._text;
-  const image = mapped.coverimages?.coverimage?._text;
+        if (!response.ok) {
+          throw new Error(json?.error || `Request failed with status ${response.status}`);
+        }
 
-  const specRows = [
-    ["ISBN Nummer", mapped.identifiers?.["isbn-id"]?._text],
-    ["PPN Nummer", mapped.identifiers?.["ppn-id"]?._text],
-    ["Boekcode", mapped.misc?.bookcode],
-    ["Taal publicatie", mapped.languages?.language?._text],
-    ["Taal - Originele taal", mapped.languages?.["original-language"]?._text],
-    ["Hoofdtitel", title],
-    ["Algemene materiaalaanduiding", mapped.misc?.material],
-    ["Eerste verantwoordelijke", author],
-    ["Titel - Volgende verantwoordelijken", mapped.contributors?.secondary?.lastName],
-    ["Plaats van uitgave", mapped.publication?.place?._text],
-    ["Uitgever", mapped.publication?.publishers?.publisher?._text],
-    ["Jaar van uitgave", mapped.publication?.year?._text],
-    ["Pagina's", mapped.description?.pages?._text],
-    ["Collatie - Illustraties", mapped.description?.["physical-description"]?._text],
-    ["Centimeters", mapped.description?.size?._text],
-    ["Annotatie", mapped.annotation?._text],
-    ["Serietitel", mapped.series?.title?._text],
-    ["Auteur Functie", mapped.contributors?.primary?.role],
-    ["Auteur Achternaam", mapped.contributors?.primary?.lastName],
-    ["Auteur Voornaam", mapped.contributors?.primary?.firstName],
-    ["Trefwoord - Hoofd geleding", mapped.subjects?.["topical-subject"]?.[0]?._text],
-    ["SISO - Code", mapped.classification?.siso?._text],
-    ["Auteur - secundaire - Functie", mapped.contributors?.secondary?.roles],
-    ["Auteur - secundaire - Achternaam", mapped.contributors?.secondary?.lastName],
-    ["Auteur - secundaire - Voornaam", mapped.contributors?.secondary?.firstName],
-    ["Prod country", mapped.misc?.prodCountry],
-    ["Samenvatting - Tekst", mapped.summaries?.summary?._text],
-    ["Bestelnummer NBD Nummer", mapped.misc?.nbd]
-  ].filter(([, v]) => v);
+        return json;
+      })
+      .then((json) => {
+        if (!isCancelled) setData(json);
+      })
+      .catch((err) => {
+        if (!isCancelled) setError(err.message || "Onbekende fout");
+      });
 
-  const branches = mapped["librarian-info"]?.record?.meta?.branches || [];
+    return () => {
+      isCancelled = true;
+    };
+  }, [router.isReady, id]);
 
-  const diff = diffObjects({}, mapped);
+  const mapped = data?.mapped || {};
+  const raw = data?.raw || {};
+  const debugCalls = asArray(raw?.debug?.calls);
 
-  const download = () => {
-    const blob = new Blob([toCSV(diff)], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "mapping.csv";
-    a.click();
+  const title = text(mapped?.titles?.title?._text);
+  const shortTitle = text(mapped?.titles?.["short-title"]?._text);
+  const subtitle = text(mapped?.titles?.subtitle?._text);
+  const authorLine = text(mapped?.authors?.["main-author"]?._text);
+  const summary = text(mapped?.summaries?.summary?._text);
+
+  const coverImage = useMemo(() => {
+    const cover = mapped?.coverimages?.coverimage;
+    if (Array.isArray(cover)) return text(cover[0]?._text);
+    return text(cover?._text);
+  }, [mapped]);
+
+  const topSpecs = useMemo(() => {
+    const rows = [
+      text(asArray(mapped?.formats?.format).map((item) => item?._text).filter(Boolean).join(", ")),
+      text(mapped?.languages?.language?._text),
+      text(mapped?.publication?.publishers?.publisher?._text),
+      text(mapped?.description?.["physical-description"]?._text),
+      text(mapped?.series?.title?._text),
+      text(mapped?.["target-audiences"]?.["target-audience"]?._text),
+    ].filter(Boolean);
+
+    return rows;
+  }, [mapped]);
+
+  const subjects = useMemo(() => {
+    return asArray(mapped?.subjects?.["topical-subject"])
+      .map((item) => text(item?._text))
+      .filter(Boolean);
+  }, [mapped]);
+
+  const specRows = useMemo(() => {
+    const rows = [
+      ["ISBN Nummer", text(mapped?.identifiers?.["isbn-id"]?._text)],
+      ["PPN Nummer", text(mapped?.identifiers?.["ppn-id"]?._text)],
+      ["Boekcode", text(mapped?.misc?.bookcode)],
+      ["Taal publicatie", text(mapped?.languages?.language?._text)],
+      ["Taal - Originele taal", text(mapped?.languages?.["original-language"]?._text)],
+      ["Hoofdtitel", title],
+      ["Algemene materiaalaanduiding", text(mapped?.misc?.material)],
+      ["Eerste verantwoordelijke", authorLine],
+      ["Titel - Volgende verantwoordelijken", text(mapped?.contributors?.secondary?.statement || mapped?.contributors?.secondary?.lastName)],
+      ["Plaats van uitgave", text(mapped?.publication?.place?._text)],
+      ["Uitgever", text(mapped?.publication?.publishers?.publisher?._text)],
+      ["Jaar van uitgave", text(mapped?.publication?.year?._text)],
+      ["Pagina's", text(mapped?.description?.pages?._text)],
+      ["Collatie - Illustraties", text(mapped?.description?.["physical-description"]?._text)],
+      ["Centimeters", text(mapped?.description?.size?._text)],
+      ["Annotatie", text(mapped?.annotation?._text)],
+      ["Serietitel", text(mapped?.series?.title?._text)],
+      ["Auteur Functie", text(mapped?.contributors?.primary?.role)],
+      ["Auteur Achternaam", text(mapped?.contributors?.primary?.lastName)],
+      ["Auteur Voornaam", text(mapped?.contributors?.primary?.firstName)],
+      ["Trefwoord - Hoofd geleding", text(mapped?.subjects?.["topical-subject"]?.[0]?._text)],
+      ["SISO - Code", text(mapped?.classification?.siso?._text)],
+      ["Auteur - secundaire - Functie", text(mapped?.contributors?.secondary?.roles)],
+      ["Auteur - secundaire - Achternaam", text(mapped?.contributors?.secondary?.lastName)],
+      ["Auteur - secundaire - Voornaam", text(mapped?.contributors?.secondary?.firstName)],
+      ["Prod country", text(mapped?.misc?.prodCountry)],
+      ["Samenvatting - Tekst", summary],
+      ["Bestelnummer NBD Nummer", text(mapped?.misc?.nbd)],
+    ];
+
+    return rows.filter(([, value]) => value);
+  }, [mapped, title, authorLine, summary]);
+
+  const availabilityRows = useMemo(() => {
+    return asArray(mapped?.["librarian-info"]?.record?.meta?.branches).map((branch, index) => ({
+      key: `${getBranchField(branch, "b") || "row"}-${index}`,
+      location: getBranchField(branch, "locationName") || getBranchField(branch, "branchName") || getBranchField(branch, "s"),
+      place: getBranchField(branch, "m"),
+      shelf: getBranchField(branch, "k"),
+      status: getBranchField(branch, "status"),
+    }));
+  }, [mapped]);
+
+  const diff = useMemo(() => diffObjects({}, mapped), [mapped]);
+
+  const downloadCsv = () => {
+    const csv = toCSV(diff);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "mapping.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
+  if (error) {
+    return <div className="container">Fout: {error}</div>;
+  }
+
+  if (!data) {
+    return <div className="container">Loading...</div>;
+  }
+
   return (
-    <div className="container detail-page">
-      <div className="hero">
-        <div className="hero-copy">
-          <h1 className="title">{title}</h1>
-          <div className="author-line">{author}</div>
-          <div className="summary-text">{summary}</div>
-        </div>
+    <div className="page">
+      <div className="container detail-page">
+        <div className="hero">
+          <div className="hero-copy">
+            <h1 className="title">{title || shortTitle || "Onbekende titel"}</h1>
 
-        <div className="hero-cover">
-          {image && <img src={image} className="cover-large" />}
-        </div>
-      </div>
+            {subtitle && subtitle !== title && subtitle !== shortTitle ? (
+              <div className="subtitle">{subtitle}</div>
+            ) : null}
 
-      <div className="section-header">
-        <h2>Praktische informatie</h2>
+            {authorLine ? <div className="author-line">{authorLine}</div> : null}
 
-        <div className="tab-buttons">
-          <button
-            className={tab === "specs" ? "tab-button active" : "tab-button"}
-            onClick={() => setTab("specs")}
-          >
-            specificaties
-          </button>
+            {summary ? <div className="summary-text">{summary}</div> : null}
 
-          <button
-            className={tab === "availability" ? "tab-button active" : "tab-button"}
-            onClick={() => setTab("availability")}
-          >
-            beschikbaarheid
-          </button>
-        </div>
-      </div>
+            <div className="card-grid top-cards">
+              <section className="info-card">
+                <h2>Specificaties</h2>
+                {topSpecs.length ? (
+                  <ul className="plain-list">
+                    {topSpecs.map((value, index) => (
+                      <li key={`${value}-${index}`}>{value}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <ul className="plain-list">
+                    <li>Geen specificaties beschikbaar</li>
+                  </ul>
+                )}
+              </section>
 
-      {tab === "availability" ? (
-        <section className="table-card">
-          <table className="detail-table">
-            <tbody>
-              {branches.map((b, i) => {
-                const f = b.branches;
-                return (
-                  <tr key={i}>
-                    <td>{f.find(x => x._attributes.key === "s")?._text}</td>
-                    <td>{f.find(x => x._attributes.key === "m")?._text}</td>
-                    <td>{f.find(x => x._attributes.key === "k")?._text}</td>
-                    <td>{f.find(x => x._attributes.key === "status")?._text}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </section>
-      ) : (
-        <section className="specs-list">
-          {specRows.map(([label, value], i) => (
-            <div className="spec-row" key={i}>
-              <div className="spec-label">{label}</div>
-              <div className="spec-value">{value}</div>
+              <section className="info-card">
+                <h2>Onderwerpen</h2>
+                {subjects.length ? (
+                  <ul className="plain-list">
+                    {subjects.map((value, index) => (
+                      <li key={`${value}-${index}`}>{value}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <ul className="plain-list">
+                    <li>Geen onderwerpen beschikbaar</li>
+                  </ul>
+                )}
+              </section>
             </div>
-          ))}
+          </div>
+
+          <div className="hero-cover">
+            {coverImage ? (
+              <img src={coverImage} className="cover-large" alt={title || shortTitle || "Cover"} />
+            ) : null}
+          </div>
+        </div>
+
+        <div className="section-header">
+          <h2>Praktische informatie</h2>
+
+          <div className="tab-buttons">
+            <button
+              type="button"
+              className={tab === "specs" ? "tab-button active" : "tab-button"}
+              onClick={() => setTab("specs")}
+            >
+              specificaties
+            </button>
+
+            <button
+              type="button"
+              className={tab === "availability" ? "tab-button active" : "tab-button"}
+              onClick={() => setTab("availability")}
+            >
+              beschikbaarheid
+            </button>
+          </div>
+        </div>
+
+        {tab === "availability" ? (
+          <section className="table-card">
+            <div className="table-wrap">
+              <table className="detail-table">
+                <thead>
+                  <tr>
+                    <th>Locatie</th>
+                    <th>Plaats</th>
+                    <th>Signatuur</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {availabilityRows.length ? (
+                    availabilityRows.map((row) => (
+                      <tr key={row.key}>
+                        <td>{row.location || "—"}</td>
+                        <td>{row.place || "—"}</td>
+                        <td>{row.shelf || "—"}</td>
+                        <td>{row.status || "—"}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td>—</td>
+                      <td>—</td>
+                      <td>—</td>
+                      <td>Geen exemplaren beschikbaar</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ) : (
+          <section className="specs-list">
+            {specRows.length ? (
+              specRows.map(([label, value]) => (
+                <div className="spec-row" key={label}>
+                  <div className="spec-label">{label}</div>
+                  <div className="spec-value">{value}</div>
+                </div>
+              ))
+            ) : (
+              <div className="spec-row">
+                <div className="spec-label">Specificaties</div>
+                <div className="spec-value">Geen specificaties beschikbaar</div>
+              </div>
+            )}
+          </section>
+        )}
+
+        <section className="debug-section">
+          <button type="button" className="tab-button" onClick={downloadCsv}>
+            Download CSV
+          </button>
+
+          <details className="debug-block">
+            <summary>OCLC API calls</summary>
+            <div className="debug-content">
+              {debugCalls.length ? (
+                debugCalls.map((call, index) => (
+                  <details className="debug-call" key={`${call?.url || "call"}-${index}`}>
+                    <summary>
+                      {call?.url || "Onbekende call"} | {call?.status || "?"}
+                    </summary>
+                    <pre>{pretty(call?.body ?? call)}</pre>
+                  </details>
+                ))
+              ) : (
+                <pre>Geen calls beschikbaar</pre>
+              )}
+            </div>
+          </details>
+
+          <details className="debug-block">
+            <summary>Mapped output</summary>
+            <div className="debug-content">
+              <pre>{pretty(mapped)}</pre>
+            </div>
+          </details>
         </section>
-      )}
-
-      <section className="debug-section">
-        <button onClick={download}>Download CSV</button>
-
-        <pre>{JSON.stringify(mapped, null, 2)}</pre>
-        <pre>{JSON.stringify(data.raw, null, 2)}</pre>
-      </section>
+      </div>
     </div>
   );
 }
