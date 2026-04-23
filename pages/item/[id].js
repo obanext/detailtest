@@ -183,59 +183,61 @@ export default function Page() {
       </div>
 
       <div className="container detail-page">
-        <div className="cover-large-wrapper">
-          {coverImage ? (
-            <img
-              src={coverImage}
-              className="cover-large-main"
-              alt={title || shortTitle || "Cover"}
-            />
-          ) : (
-            <div className="cover-placeholder">Geen cover</div>
-          )}
-        </div>
+        <div className="hero">
+          <div className="hero-copy">
+            <h1 className="title">{title || shortTitle || "Onbekende titel"}</h1>
 
-        <div className="hero-copy hero-copy-standalone">
-          <h1 className="title">{title || shortTitle || "Onbekende titel"}</h1>
+            {subtitle && subtitle !== title && subtitle !== shortTitle ? (
+              <div className="subtitle">{subtitle}</div>
+            ) : null}
 
-          {subtitle && subtitle !== title && subtitle !== shortTitle ? (
-            <div className="subtitle">{subtitle}</div>
-          ) : null}
+            {author ? <div className="author-line">{author}</div> : null}
 
-          {author ? <div className="author-line">{author}</div> : null}
+            {summary ? <div className="summary-text">{summary}</div> : null}
 
-          {summary ? <div className="summary-text">{summary}</div> : null}
+            <div className="card-grid top-cards">
+              <section className="info-card">
+                <h2>Specificaties</h2>
+                {topSpecs.length ? (
+                  <ul className="plain-list">
+                    {topSpecs.map((value, index) => (
+                      <li key={`${value}-${index}`}>{value}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <ul className="plain-list">
+                    <li>Geen specificaties beschikbaar</li>
+                  </ul>
+                )}
+              </section>
 
-          <div className="card-grid top-cards">
-            <section className="info-card">
-              <h2>Specificaties</h2>
-              {topSpecs.length ? (
-                <ul className="plain-list">
-                  {topSpecs.map((value, index) => (
-                    <li key={`${value}-${index}`}>{value}</li>
-                  ))}
-                </ul>
-              ) : (
-                <ul className="plain-list">
-                  <li>Geen specificaties beschikbaar</li>
-                </ul>
-              )}
-            </section>
+              <section className="info-card">
+                <h2>Onderwerpen</h2>
+                {subjects.length ? (
+                  <ul className="plain-list">
+                    {subjects.map((value, index) => (
+                      <li key={`${value}-${index}`}>{value}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <ul className="plain-list">
+                    <li>Geen onderwerpen beschikbaar</li>
+                  </ul>
+                )}
+              </section>
+            </div>
+          </div>
 
-            <section className="info-card">
-              <h2>Onderwerpen</h2>
-              {subjects.length ? (
-                <ul className="plain-list">
-                  {subjects.map((value, index) => (
-                    <li key={`${value}-${index}`}>{value}</li>
-                  ))}
-                </ul>
-              ) : (
-                <ul className="plain-list">
-                  <li>Geen onderwerpen beschikbaar</li>
-                </ul>
-              )}
-            </section>
+          <div className="hero-cover">
+            {coverImage ? (
+              <img
+                src={coverImage}
+                className="cover-large"
+                alt={title || shortTitle || "Cover"}
+              />
+            ) : (
+              <div className="cover-placeholder">Geen cover</div>
+            )}
           </div>
         </div>
 
