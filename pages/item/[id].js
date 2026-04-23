@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
-import { diffObjects } from "../../utils/diff";
-import { toCSV } from "../../utils/csv";
+import { buildDetailMappingRows } from "../../utils/mappingRows";
+import { toDetailMappingCsv } from "../../utils/csv";
 
 const pretty = (value) => JSON.stringify(value, null, 2);
 
-const asArray = (value) =>
-  Array.isArray(value) ? value : value ? [value] : [];
+const asArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 
 const text = (value) => {
   if (typeof value === "string") return value.trim();
@@ -28,7 +27,8 @@ export default function Page() {
   useEffect(() => {
     if (!router.isReady || !id) return;
 
-    let isCancelled = false;
+    let cancelled = false;
+
     setError("");
     setData(null);
 
@@ -43,25 +43,25 @@ export default function Page() {
         return json;
       })
       .then((json) => {
-        if (!isCancelled) setData(json);
+        if (!cancelled) setData(json);
       })
       .catch((err) => {
-        if (!isCancelled) setError(err.message || "Onbekende fout");
+        if (!cancelled) setError(err.message || "Onbekende fout");
       });
 
     return () => {
-      isCancelled = true;
+      cancelled = true;
     };
   }, [router.isReady, id]);
 
   const mapped = data?.mapped || {};
   const raw = data?.raw || {};
-  const debugCalls = asArray(raw?.debug?.calls);
+  const calls = asArray(raw?.debug?.calls);
 
   const title = text(mapped?.titles?.title?._text);
   const shortTitle = text(mapped?.titles?.["short-title"]?._text);
   const subtitle = text(mapped?.titles?.subtitle?._text);
-  const authorLine = text(mapped?.authors?.["main-author"]?._text);
+  const author = text(mapped?.authors?.["main-author"]?._text);
   const summary = text(mapped?.summaries?.summary?._text);
 
   const coverImage = useMemo(() => {
@@ -71,16 +71,22 @@ export default function Page() {
   }, [mapped]);
 
   const topSpecs = useMemo(() => {
-    const rows = [
+    return [
       text(asArray(mapped?.formats?.format).map((item) => item?._text).filter(Boolean).join(", ")),
       text(mapped?.languages?.language?._text),
       text(mapped?.publication?.publishers?.publisher?._text),
-      text(mapped?.description?.["physical-description"]?._text),
+      text(
+        [
+          mapped?.description?.pages?._text,
+          mapped?.description?.["physical-description"]?._text,
+          mapped?.description?.size?._text,
+        ]
+          .filter(Boolean)
+          .join(" ; ")
+      ),
       text(mapped?.series?.title?._text),
       text(mapped?.["target-audiences"]?.["target-audience"]?._text),
     ].filter(Boolean);
-
-    return rows;
   }, [mapped]);
 
   const subjects = useMemo(() => {
@@ -98,7 +104,7 @@ export default function Page() {
       ["Taal - Originele taal", text(mapped?.languages?.["original-language"]?._text)],
       ["Hoofdtitel", title],
       ["Algemene materiaalaanduiding", text(mapped?.misc?.material)],
-      ["Eerste verantwoordelijke", authorLine],
+      ["Eerste verantwoordelijke", author],
       ["Titel - Volgende verantwoordelijken", text(mapped?.contributors?.secondary?.statement || mapped?.contributors?.secondary?.lastName)],
       ["Plaats van uitgave", text(mapped?.publication?.place?._text)],
       ["Uitgever", text(mapped?.publication?.publishers?.publisher?._text)],
@@ -122,7 +128,7 @@ export default function Page() {
     ];
 
     return rows.filter(([, value]) => value);
-  }, [mapped, title, authorLine, summary]);
+  }, [mapped, title, author, summary]);
 
   const availabilityRows = useMemo(() => {
     return asArray(mapped?.["librarian-info"]?.record?.meta?.branches).map((branch, index) => ({
@@ -134,15 +140,15 @@ export default function Page() {
     }));
   }, [mapped]);
 
-  const diff = useMemo(() => diffObjects({}, mapped), [mapped]);
+  const csvRows = useMemo(() => buildDetailMappingRows(raw, mapped), [raw, mapped]);
 
   const downloadCsv = () => {
-    const csv = toCSV(diff);
+    const csv = toDetailMappingCsv(csvRows);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "mapping.csv";
+    anchor.download = `detailpagina-mapping-${id}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -166,7 +172,7 @@ export default function Page() {
               <div className="subtitle">{subtitle}</div>
             ) : null}
 
-            {authorLine ? <div className="author-line">{authorLine}</div> : null}
+            {author ? <div className="author-line">{author}</div> : null}
 
             {summary ? <div className="summary-text">{summary}</div> : null}
 
@@ -286,14 +292,14 @@ export default function Page() {
 
         <section className="debug-section">
           <button type="button" className="tab-button" onClick={downloadCsv}>
-            Download CSV
+            Download mapping CSV
           </button>
 
           <details className="debug-block">
             <summary>OCLC API calls</summary>
             <div className="debug-content">
-              {debugCalls.length ? (
-                debugCalls.map((call, index) => (
+              {calls.length ? (
+                calls.map((call, index) => (
                   <details className="debug-call" key={`${call?.url || "call"}-${index}`}>
                     <summary>
                       {call?.url || "Onbekende call"} | {call?.status || "?"}
