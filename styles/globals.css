@@ -7,7 +7,7 @@ body {
   margin: 0;
   padding: 0;
   font-family: Arial, sans-serif;
-  background: #f4f4f4;
+  background: #ffffff;
   color: #111;
 }
 
@@ -30,21 +30,29 @@ button {
   padding: 24px;
 }
 
+.header-image {
+  width: 100%;
+}
+
+.header-image img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
 .detail-page {
   padding-top: 40px;
   padding-bottom: 60px;
 }
 
-.hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 48px;
-  align-items: start;
-  margin-bottom: 56px;
-}
-
 .hero-copy {
   min-width: 0;
+}
+
+.hero-copy-standalone {
+  max-width: 760px;
+  margin: 0 auto 56px;
+  text-align: left;
 }
 
 .pill-row {
@@ -68,6 +76,34 @@ button {
 .pill.muted {
   background: #ddd;
   color: #111;
+}
+
+.cover-large-wrapper {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin: 8px 0 32px;
+}
+
+.cover-large-main {
+  width: 420px;
+  max-width: 90%;
+  height: auto;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+.cover-placeholder {
+  width: 420px;
+  max-width: 90%;
+  min-height: 560px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f2f2f2;
+  color: #666;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
 
 .title {
@@ -330,10 +366,6 @@ pre {
 }
 
 @media (max-width: 980px) {
-  .hero {
-    grid-template-columns: 1fr;
-  }
-
   .title {
     font-size: 52px;
   }
@@ -358,5 +390,11 @@ pre {
   .spec-row {
     grid-template-columns: 1fr;
     gap: 10px;
+  }
+
+  .cover-large-main,
+  .cover-placeholder {
+    width: 320px;
+    min-height: 440px;
   }
 }
