@@ -1,12 +1,27 @@
-export function toCSV(rows) {
-  const headers = ["field", "reference", "mapped", "status"];
+export function toDetailMappingCsv(rows) {
+  const headers = [
+    "OBA detailpagina",
+    "raw json parsed veld",
+    "OCLC endpoint",
+    "OCLC veld",
+    "OCLC waarde",
+  ];
 
-  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const escape = (value) => {
+    const stringValue = value === null || value === undefined ? "" : String(value);
+    return `"${stringValue.replace(/"/g, '""')}"`;
+  };
 
   return [
     headers.join(","),
-    ...rows.map((r) =>
-      [r.field, esc(JSON.stringify(r.reference)), esc(JSON.stringify(r.mapped)), r.status].join(",")
+    ...rows.map((row) =>
+      [
+        row.label,
+        row.jsonPath,
+        row.endpoint,
+        row.oclcField,
+        row.oclcValue,
+      ].map(escape).join(",")
     ),
   ].join("\n");
 }
