@@ -143,14 +143,23 @@ export default function Page() {
   const csvRows = useMemo(() => buildDetailMappingRows(raw, mapped), [raw, mapped]);
 
   const downloadCsv = () => {
-    const csv = toDetailMappingCsv(csvRows);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `detailpagina-mapping-${id}.csv`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    try {
+      const csv = toDetailMappingCsv(csvRows);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.setAttribute("download", `detailpagina-mapping-${id}.csv`);
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+
+      window.URL.revokeObjectURL(url);
+    } catch (downloadError) {
+      console.error("CSV download mislukt", downloadError);
+      window.alert("CSV download mislukt. Controleer de console.");
+    }
   };
 
   if (error) {
