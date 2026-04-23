@@ -9,6 +9,7 @@ export default function Page() {
 
   useEffect(() => {
     if (!query.id) return;
+
     fetch(`/api/wise?id=${query.id}`)
       .then((r) => r.json())
       .then(setData);
@@ -16,23 +17,36 @@ export default function Page() {
 
   if (!data) return <div className="container">Loading...</div>;
 
-  const mapped = data.mapped;
+  const mapped = data.mapped || {};
 
-  const title = mapped.titles?.title?._text;
-  const author = mapped.authors?.["main-author"]?._text;
-  const summary = mapped.summaries?.summary?._text;
-  const image = mapped.coverimages?.coverimage?._text;
+  // --- BASISVELDEN ---
+  const title = mapped.titles?.title?._text || "";
+  const subtitle = mapped.titles?.["short-title"]?._text || "";
+  const author = mapped.authors?.["main-author"]?._text || "";
+  const summary = mapped.summaries?.summary?._text || "";
+  const image = mapped.coverimages?.coverimage?._text || "";
 
-  const subjects = mapped.subjects?.["topical-subject"] || [];
+  // --- SPECIFICATIES (UI opgebouwd uit contract) ---
   const specs = [
-    mapped.publication?.year?._text,
-    mapped.languages?.language?._text,
-    mapped.identifiers?.["isbn-id"]?._text
+    mapped.publication?.year?._text && `Jaar: ${mapped.publication.year._text}`,
+    mapped.publication?.publishers?.publisher?._text &&
+      `Uitgever: ${mapped.publication.publishers.publisher._text}`,
+    mapped.languages?.language?._text &&
+      `Taal: ${mapped.languages.language._text}`,
+    mapped.identifiers?.["isbn-id"]?._text &&
+      `ISBN: ${mapped.identifiers["isbn-id"]._text}`,
+    mapped.description?.pages?._text &&
+      `Pagina's: ${mapped.description.pages._text}`
   ].filter(Boolean);
 
+  // --- ONDERWERPEN ---
+  const subjects = mapped.subjects?.["topical-subject"] || [];
+
+  // --- BESCHIKBAARHEID ---
   const branches =
     mapped["librarian-info"]?.record?.meta?.branches || [];
 
+  // --- DIFF ---
   const diff = diffObjects({}, mapped);
 
   const download = () => {
@@ -48,7 +62,11 @@ export default function Page() {
       <div className="hero">
         <div className="hero-copy">
           <h1 className="title">{title}</h1>
+
+          {subtitle && <div className="subtitle">{subtitle}</div>}
+
           <div className="author-line">{author}</div>
+
           <div className="summary-text">{summary}</div>
 
           <div className="card-grid top-cards">
@@ -74,7 +92,7 @@ export default function Page() {
 
         <div className="hero-cover">
           {image && (
-            <img src={image} className="cover-large" />
+            <img src={image} className="cover-large" alt={title} />
           )}
         </div>
       </div>
@@ -95,13 +113,30 @@ export default function Page() {
               </tr>
             </thead>
             <tbody>
-              {branches.map((b, i) => {
-                const fields = b.branches;
+              {branches.length === 0 && (
+                <tr>
+                  <td colSpan={4}>Geen exemplaren gevonden</td>
+                </tr>
+              )}
 
-                const location = fields.find(f => f._attributes.key === "s")?._text;
-                const place = fields.find(f => f._attributes.key === "m")?._text;
-                const shelf = fields.find(f => f._attributes.key === "k")?._text;
-                const status = fields.find(f => f._attributes.key === "status")?._text;
+              {branches.map((b, i) => {
+                const fields = b.branches || [];
+
+                const location = fields.find(
+                  (f) => f._attributes.key === "s"
+                )?._text;
+
+                const place = fields.find(
+                  (f) => f._attributes.key === "m"
+                )?._text;
+
+                const shelf = fields.find(
+                  (f) => f._attributes.key === "k"
+                )?._text;
+
+                const status = fields.find(
+                  (f) => f._attributes.key === "status"
+                )?._text;
 
                 return (
                   <tr key={i}>
