@@ -6,6 +6,7 @@ import { toCSV } from "../../utils/csv";
 export default function Page() {
   const { query } = useRouter();
   const [data, setData] = useState(null);
+  const [tab, setTab] = useState("availability");
 
   useEffect(() => {
     if (!query.id) return;
@@ -19,34 +20,36 @@ export default function Page() {
 
   const mapped = data.mapped || {};
 
-  // --- BASISVELDEN ---
+  // ===== BASIS =====
   const title = mapped.titles?.title?._text || "";
   const subtitle = mapped.titles?.["short-title"]?._text || "";
   const author = mapped.authors?.["main-author"]?._text || "";
   const summary = mapped.summaries?.summary?._text || "";
   const image = mapped.coverimages?.coverimage?._text || "";
 
-  // --- SPECIFICATIES (UI opgebouwd uit contract) ---
-  const specs = [
-    mapped.publication?.year?._text && `Jaar: ${mapped.publication.year._text}`,
-    mapped.publication?.publishers?.publisher?._text &&
-      `Uitgever: ${mapped.publication.publishers.publisher._text}`,
-    mapped.languages?.language?._text &&
-      `Taal: ${mapped.languages.language._text}`,
-    mapped.identifiers?.["isbn-id"]?._text &&
-      `ISBN: ${mapped.identifiers["isbn-id"]._text}`,
-    mapped.description?.pages?._text &&
-      `Pagina's: ${mapped.description.pages._text}`
-  ].filter(Boolean);
+  // ===== SPECIFICATIES (DETAIL VIEW) =====
+  const specRows = [
+    ["ISBN Nummer", mapped.identifiers?.["isbn-id"]?._text],
+    ["PPN Nummer", mapped.identifiers?.["ppn-id"]?._text],
+    ["Taal publicatie", mapped.languages?.language?._text],
+    ["Hoofdtitel", title],
+    ["Eerste verantwoordelijke", author],
+    ["Plaats van uitgave", ""], // niet direct beschikbaar
+    ["Uitgever", mapped.publication?.publishers?.publisher?._text],
+    ["Jaar van uitgave", mapped.publication?.year?._text],
+    ["Pagina's", mapped.description?.pages?._text],
+    ["Collatie - Illustraties", mapped.description?.["physical-description"]?._text],
+    ["Samenvatting - Tekst", summary]
+  ].filter(([, v]) => v);
 
-  // --- ONDERWERPEN ---
+  // ===== ONDERWERPEN =====
   const subjects = mapped.subjects?.["topical-subject"] || [];
 
-  // --- BESCHIKBAARHEID ---
+  // ===== BESCHIKBAARHEID =====
   const branches =
     mapped["librarian-info"]?.record?.meta?.branches || [];
 
-  // --- DIFF ---
+  // ===== DIFF =====
   const diff = diffObjects({}, mapped);
 
   const download = () => {
@@ -59,6 +62,7 @@ export default function Page() {
 
   return (
     <div className="container detail-page">
+      {/* ===== HERO ===== */}
       <div className="hero">
         <div className="hero-copy">
           <h1 className="title">{title}</h1>
@@ -73,8 +77,8 @@ export default function Page() {
             <section className="info-card">
               <h2>Specificaties</h2>
               <ul className="plain-list">
-                {specs.map((s, i) => (
-                  <li key={i}>{s}</li>
+                {specRows.slice(0, 4).map(([label, value], i) => (
+                  <li key={i}>{value}</li>
                 ))}
               </ul>
             </section>
@@ -97,61 +101,81 @@ export default function Page() {
         </div>
       </div>
 
+      {/* ===== PRAKTISCHE INFO ===== */}
       <div className="section-header">
-        <h2>Beschikbaarheid</h2>
+        <h2>Praktische informatie</h2>
+
+        <div className="tab-buttons">
+          <button
+            className={tab === "specs" ? "tab-button active" : "tab-button"}
+            onClick={() => setTab("specs")}
+          >
+            specificaties
+          </button>
+
+          <button
+            className={tab === "availability" ? "tab-button active" : "tab-button"}
+            onClick={() => setTab("availability")}
+          >
+            beschikbaarheid
+          </button>
+        </div>
       </div>
 
-      <section className="table-card">
-        <div className="table-wrap">
-          <table className="detail-table">
-            <thead>
-              <tr>
-                <th>Locatie</th>
-                <th>Plaats</th>
-                <th>Signatuur</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {branches.length === 0 && (
+      {/* ===== TAB CONTENT ===== */}
+
+      {tab === "availability" ? (
+        <section className="table-card">
+          <div className="table-wrap">
+            <table className="detail-table">
+              <thead>
                 <tr>
-                  <td colSpan={4}>Geen exemplaren gevonden</td>
+                  <th>Locatie</th>
+                  <th>Plaats</th>
+                  <th>Signatuur</th>
+                  <th>Status</th>
                 </tr>
-              )}
-
-              {branches.map((b, i) => {
-                const fields = b.branches || [];
-
-                const location = fields.find(
-                  (f) => f._attributes.key === "s"
-                )?._text;
-
-                const place = fields.find(
-                  (f) => f._attributes.key === "m"
-                )?._text;
-
-                const shelf = fields.find(
-                  (f) => f._attributes.key === "k"
-                )?._text;
-
-                const status = fields.find(
-                  (f) => f._attributes.key === "status"
-                )?._text;
-
-                return (
-                  <tr key={i}>
-                    <td>{location}</td>
-                    <td>{place}</td>
-                    <td>{shelf}</td>
-                    <td>{status}</td>
+              </thead>
+              <tbody>
+                {branches.length === 0 && (
+                  <tr>
+                    <td colSpan={4}>Geen exemplaren gevonden</td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                )}
 
+                {branches.map((b, i) => {
+                  const f = b.branches || [];
+
+                  const location = f.find(x => x._attributes.key === "s")?._text;
+                  const place = f.find(x => x._attributes.key === "m")?._text;
+                  const shelf = f.find(x => x._attributes.key === "k")?._text;
+                  const status = f.find(x => x._attributes.key === "status")?._text;
+
+                  return (
+                    <tr key={i}>
+                      <td>{location}</td>
+                      <td>{place}</td>
+                      <td>{shelf}</td>
+                      <td>{status}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ) : (
+        <section className="specs-list">
+          {specRows.map(([label, value], i) => (
+            <div className="spec-row" key={i}>
+              <div className="spec-label">{label}</div>
+              <div className="spec-value">{value}</div>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {/* ===== DEBUG ===== */}
       <section className="debug-section">
         <button onClick={download}>Download CSV</button>
 
