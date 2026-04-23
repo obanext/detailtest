@@ -28,18 +28,15 @@ export default function Page() {
     if (!router.isReady || !id) return;
 
     let cancelled = false;
-
     setError("");
     setData(null);
 
     fetch(`/api/wise?id=${encodeURIComponent(id)}`)
       .then(async (response) => {
         const json = await response.json().catch(() => null);
-
         if (!response.ok) {
           throw new Error(json?.error || `Request failed with status ${response.status}`);
         }
-
         return json;
       })
       .then((json) => {
@@ -183,8 +180,8 @@ export default function Page() {
       </div>
 
       <div className="container detail-page">
-        <div className="hero">
-          <div className="hero-copy">
+        <section className="hero">
+          <div className="hero-left">
             <h1 className="title">{title || shortTitle || "Onbekende titel"}</h1>
 
             {subtitle && subtitle !== title && subtitle !== shortTitle ? (
@@ -228,7 +225,7 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="hero-cover">
+          <div className="hero-right">
             {coverImage ? (
               <img
                 src={coverImage}
@@ -239,7 +236,7 @@ export default function Page() {
               <div className="cover-placeholder">Geen cover</div>
             )}
           </div>
-        </div>
+        </section>
 
         <div className="section-header">
           <h2>Praktische informatie</h2>
