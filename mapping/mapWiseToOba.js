@@ -124,7 +124,7 @@ const buildDetails = (title, pub, phys, contributors) => {
     .map(([label, value]) => ({ label, value }));
 };
 
-export function mapWiseToOba({ title, availability, summary, itemInformation }) {
+export function mapWiseToOba({ title, availability, summary, itemInformation, debug, source, wiseId }) {
   const imprintSource = first(title.imprint, title.publicationDetails, "");
   const pub = splitImprint(imprintSource);
   const phys = parsePhysicalDescription(title.annotationCollation);
@@ -180,6 +180,6 @@ export function mapWiseToOba({ title, availability, summary, itemInformation }) 
     },
     practicalRows,
     details: buildDetails(title, pub, phys, contributors),
-    raw: { title, availability, summary, itemInformation, currentRec },
+    raw: { title, availability, summary, itemInformation, currentRec, debug, source, wiseId },
   };
 }
