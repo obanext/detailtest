@@ -12,7 +12,9 @@ export default function Page() {
     if (!router.isReady) return;
 
     const isPpnRoute = typeof id === "string" && id.toUpperCase().startsWith("PPN:");
-    const resolvedPpn = typeof ppn === "string" ? ppn : isPpnRoute ? id.split(":").slice(1).join(":") : null;
+    const resolvedPpn =
+      typeof ppn === "string" ? ppn : isPpnRoute ? id.split(":").slice(1).join(":") : null;
+
     const url = resolvedPpn
       ? `/api/wise?ppn=${encodeURIComponent(resolvedPpn)}`
       : id
@@ -22,8 +24,8 @@ export default function Page() {
     if (!url) return;
 
     fetch(url)
-      .then(r => r.json())
-      .then(res => setData(mapWiseToOba(res)));
+      .then((r) => r.json())
+      .then((res) => setData(mapWiseToOba(res)));
   }, [router.isReady, id, ppn]);
 
   if (!data) return <div>Loading...</div>;
@@ -31,12 +33,16 @@ export default function Page() {
   return (
     <div className="container">
       <div className="header">
-        <img src={data.image} className="cover" />
+        {data.image ? <img src={data.image} className="cover" alt={data.title} /> : null}
         <div>
           <h1>{data.title}</h1>
-          <p>{data.author}</p>
-          <p>{data.imprint}</p>
-          <p>ISBN: {data.isbn?.join(", ")}</p>
+          {data.subtitle ? <p>{data.subtitle}</p> : null}
+          <p>{data.authorLine}</p>
+          <p>
+            {[data.publication?.publisher, data.publication?.place, data.publication?.year]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
         </div>
       </div>
 
@@ -45,23 +51,60 @@ export default function Page() {
         <p>{data.summary}</p>
       </section>
 
-      <section>
-        <h2>Beschikbaarheid</h2>
-        {data.availability.map((a, i) => (
-          <div key={i} className="availability">
-            {a.status}
-          </div>
-        ))}
-      </section>
+      {data.specs?.length ? (
+        <section>
+          <h2>Specificaties</h2>
+          <ul>
+            {data.specs.map((spec, i) => (
+              <li key={i}>{spec}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section>
-        <h2>Andere edities</h2>
-        <ul>
-          {data.related.slice(0, 10).map((r, i) => (
-            <li key={i}>{r.title}</li>
-          ))}
-        </ul>
+        <h2>Beschikbaarheid</h2>
+        <p>
+          {data.availabilitySummary?.label} — {data.availabilitySummary?.countText}
+        </p>
+        {data.practicalRows?.length ? (
+          data.practicalRows.map((row) => (
+            <div key={row.key} className="availability">
+              <strong>{row.location}</strong>
+              <div>Status: {row.status}</div>
+              {row.place ? <div>Plaats: {row.place}</div> : null}
+              {row.shelf ? <div>Kast: {row.shelf}</div> : null}
+              {row.edition ? <div>Editie: {row.edition}</div> : null}
+            </div>
+          ))
+        ) : (
+          <div className="availability">Geen exemplaarinformatie beschikbaar</div>
+        )}
       </section>
+
+      {data.subjects?.length ? (
+        <section>
+          <h2>Onderwerpen</h2>
+          <ul>
+            {data.subjects.map((subject, i) => (
+              <li key={i}>{subject}</li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {data.details?.length ? (
+        <section>
+          <h2>Details</h2>
+          <ul>
+            {data.details.map((item, i) => (
+              <li key={i}>
+                <strong>{item.label}:</strong> {item.value}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </div>
   );
 }
