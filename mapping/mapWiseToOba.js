@@ -116,7 +116,7 @@ const buildDetails = (title, pub, phys, contributors) => {
       secondary?.description?.split(",").slice(1).join(",").trim(),
     ],
     ["Bestelnummer NBD Nummer", title.libraryRecommendation?.match(/\b(20\d{8})\b/)?.[1]],
-    ["Samenvatting - Tekst", title.contents],
+    ["Samenvatting - Tekst", first(title.contents, title.contentsSchoolWise)],
     ["Prod country", "dit veld is niet aanwezig"],
     ["Editie", first(title.annotationEdition, title.edition)],
   ]
@@ -125,7 +125,8 @@ const buildDetails = (title, pub, phys, contributors) => {
 };
 
 export function mapWiseToOba({ title, availability, summary, itemInformation }) {
-  const pub = splitImprint(title.imprint);
+  const imprintSource = first(title.imprint, title.publicationDetails, "");
+  const pub = splitImprint(imprintSource);
   const phys = parsePhysicalDescription(title.annotationCollation);
   const rel = asArray(summary?.items);
   const currentId = String(title.id || "");
@@ -147,7 +148,7 @@ export function mapWiseToOba({ title, availability, summary, itemInformation }) 
 
   const specs = buildSpecs(title, pub, phys);
 
-  const itemRows = asArray(itemInformation).filter((i) => AMSTELLAND_BRANCHES.includes(i.branchId));
+  const itemRows = asArray(itemInformation).filter((i) => AMSTELLAND_BRANCHES.includes(String(i.branchId)));
 
   const practicalRows = itemRows.slice(0, 50).map((item, idx) => ({
     key: item.id || `${item.branchId}-${idx}`,
