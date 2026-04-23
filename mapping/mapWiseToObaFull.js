@@ -1,49 +1,57 @@
 const asArray = (v) => (Array.isArray(v) ? v : v ? [v] : []);
 const text = (v) => (typeof v === "string" ? v.trim() : v || "");
 
+/**
+ * Alleen OBA vestigingen
+ */
+const ALLOWED_BRANCHES = ["1000", "1001", "1002", "1003", "1004"];
+
+/**
+ * Hoofd mapper: OCLC → OBA JSON contract
+ */
 export function mapWiseToObaFull({ title, availability, summary, itemInformation }) {
-  if (!title) return {};
+  if (!title || typeof title !== "object") return {};
 
   return {
     id: {
-      _text: `|oba-catalogus|${title.id}`
+      _text: `|oba-catalogus|${text(title.id)}`
     },
 
     titles: {
       title: {
-        _text: title.title
+        _text: text(title.title)
       },
       "short-title": {
-        _text: title.mainTitle || title.title
+        _text: text(title.mainTitle || title.title)
       }
     },
 
     authors: {
       "main-author": {
-        _text: title.author?.description
+        _text: text(title.author?.description)
       }
     },
 
     formats: {
       format: [
         {
-          _text: title.media?.description
+          _text: text(title.media?.description)
         }
       ]
     },
 
     identifiers: {
       "isbn-id": {
-        _text: asArray(title.isbn)[0]
+        _text: text(asArray(title.isbn)[0])
       },
       "ppn-id": {
-        _text: asArray(title.ppn)[0]
+        _text: text(asArray(title.ppn)[0])
       }
     },
 
     publication: {
       year: {
-        _text: title.publicationYear
+        _text: text(title.publicationYear)
       },
       publishers: {
         publisher: {
@@ -54,14 +62,14 @@ export function mapWiseToObaFull({ title, availability, summary, itemInformation
 
     languages: {
       language: {
-        _text: asArray(title.language)[0]?.description
+        _text: text(asArray(title.language)[0]?.description)
       }
     },
 
     subjects: {
-      "topical-subject": asArray(title.subjects).map((s) => ({
-        _text: s.description
-      }))
+      "topical-subject": asArray(title.subjects)
+        .map((s) => ({ _text: text(s.description) }))
+        .filter((s) => s._text)
     },
 
     description: {
@@ -69,13 +77,13 @@ export function mapWiseToObaFull({ title, availability, summary, itemInformation
         _text: extractPages(title.annotationCollation)
       },
       "physical-description": {
-        _text: title.annotationCollation
+        _text: text(title.annotationCollation)
       }
     },
 
     summaries: {
       summary: {
-        _text: title.contents
+        _text: text(title.contents)
       }
     },
 
@@ -87,7 +95,7 @@ export function mapWiseToObaFull({ title, availability, summary, itemInformation
 
     coverimages: {
       coverimage: {
-        _text: title.imageUrls?.medium
+        _text: text(title.imageUrls?.medium)
       }
     },
 
@@ -101,34 +109,72 @@ export function mapWiseToObaFull({ title, availability, summary, itemInformation
   };
 }
 
+/**
+ * Extract publisher uit imprint
+ */
 function extractPublisher(imprint = "") {
-  const parts = imprint.split(":");
-  if (parts.length < 2) return "";
-  return parts[1].split(",")[0].trim();
+  const val = text(imprint);
+  if (!val.includes(":")) return "";
+
+  const [, rest] = val.split(":");
+  return text(rest.split(",")[0]);
 }
 
+/**
+ * Extract aantal pagina's
+ */
 function extractPages(collation = "") {
-  const match = collation.match(/^(\d+)/);
+  const val = text(collation);
+  const match = val.match(/^(\d+)/);
   return match ? `${match[1]} p` : "";
 }
 
+/**
+ * Bouw OBA branch structuur (GEFILTERD)
+ */
 function buildBranches(items = []) {
-  return items.map((item) => ({
-    branches: [
-      { _attributes: { key: "b" }, _text: item.barcode },
-      { _attributes: { key: "s" }, _text: item.branchName },
-      { _attributes: { key: "m" }, _text: item.shelfDescription },
-      { _attributes: { key: "k" }, _text: item.callNumber },
-      { _attributes: { key: "status" }, _text: mapStatus(item.effectiveStatus) }
-    ]
-  }));
+  return asArray(items)
+    .filter((item) =>
+      ALLOWED_BRANCHES.includes(String(item.branchId))
+    )
+    .map((item) => ({
+      branches: [
+        {
+          _attributes: { key: "b" },
+          _text: text(item.barcode)
+        },
+        {
+          _attributes: { key: "s" },
+          _text: text(item.branchName)
+        },
+        {
+          _attributes: { key: "m" },
+          _text: text(item.shelfDescription || item.subLocation)
+        },
+        {
+          _attributes: { key: "k" },
+          _text: text(item.callNumber)
+        },
+        {
+          _attributes: { key: "status" },
+          _text: mapStatus(item.effectiveStatus)
+        }
+      ]
+    }));
 }
 
+/**
+ * Status mapping (consistent met frontend)
+ */
 function mapStatus(status) {
   switch (status) {
-    case "AVAILABLE": return "Aanwezig";
-    case "ON_LOAN": return "Uitgeleend";
-    case "MISSING": return "Niet beschikbaar";
-    default: return status;
+    case "AVAILABLE":
+      return "Aanwezig";
+    case "ON_LOAN":
+      return "Uitgeleend";
+    case "MISSING":
+      return "Niet beschikbaar";
+    default:
+      return text(status) || "Onbekend";
   }
 }
