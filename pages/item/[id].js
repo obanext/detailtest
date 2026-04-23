@@ -14,9 +14,26 @@ export default function Page() {
       .then(setData);
   }, [query.id]);
 
-  if (!data) return <div>Loading...</div>;
+  if (!data) return <div className="container">Loading...</div>;
 
-  const diff = diffObjects({}, data.mapped);
+  const mapped = data.mapped;
+
+  const title = mapped.titles?.title?._text;
+  const author = mapped.authors?.["main-author"]?._text;
+  const summary = mapped.summaries?.summary?._text;
+  const image = mapped.coverimages?.coverimage?._text;
+
+  const subjects = mapped.subjects?.["topical-subject"] || [];
+  const specs = [
+    mapped.publication?.year?._text,
+    mapped.languages?.language?._text,
+    mapped.identifiers?.["isbn-id"]?._text
+  ].filter(Boolean);
+
+  const branches =
+    mapped["librarian-info"]?.record?.meta?.branches || [];
+
+  const diff = diffObjects({}, mapped);
 
   const download = () => {
     const blob = new Blob([toCSV(diff)], { type: "text/csv" });
@@ -27,19 +44,97 @@ export default function Page() {
   };
 
   return (
-    <div className="container">
-      <h1>{data.mapped.titles?.title?._text}</h1>
+    <div className="container detail-page">
+      <div className="hero">
+        <div className="hero-copy">
+          <h1 className="title">{title}</h1>
+          <div className="author-line">{author}</div>
+          <div className="summary-text">{summary}</div>
 
-      <button onClick={download}>Download CSV</button>
+          <div className="card-grid top-cards">
+            <section className="info-card">
+              <h2>Specificaties</h2>
+              <ul className="plain-list">
+                {specs.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ul>
+            </section>
 
-      <h3>Mapped</h3>
-      <pre>{JSON.stringify(data.mapped, null, 2)}</pre>
+            <section className="info-card">
+              <h2>Onderwerpen</h2>
+              <ul className="plain-list">
+                {subjects.map((s, i) => (
+                  <li key={i}>{s._text}</li>
+                ))}
+              </ul>
+            </section>
+          </div>
+        </div>
 
-      <h3>Raw</h3>
-      <pre>{JSON.stringify(data.raw, null, 2)}</pre>
+        <div className="hero-cover">
+          {image && (
+            <img src={image} className="cover-large" />
+          )}
+        </div>
+      </div>
 
-      <h3>Diff</h3>
-      <pre>{JSON.stringify(diff, null, 2)}</pre>
+      <div className="section-header">
+        <h2>Beschikbaarheid</h2>
+      </div>
+
+      <section className="table-card">
+        <div className="table-wrap">
+          <table className="detail-table">
+            <thead>
+              <tr>
+                <th>Locatie</th>
+                <th>Plaats</th>
+                <th>Signatuur</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {branches.map((b, i) => {
+                const fields = b.branches;
+
+                const location = fields.find(f => f._attributes.key === "s")?._text;
+                const place = fields.find(f => f._attributes.key === "m")?._text;
+                const shelf = fields.find(f => f._attributes.key === "k")?._text;
+                const status = fields.find(f => f._attributes.key === "status")?._text;
+
+                return (
+                  <tr key={i}>
+                    <td>{location}</td>
+                    <td>{place}</td>
+                    <td>{shelf}</td>
+                    <td>{status}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="debug-section">
+        <button onClick={download}>Download CSV</button>
+
+        <div className="debug-block">
+          <summary>Mapped</summary>
+          <pre>{JSON.stringify(mapped, null, 2)}</pre>
+        </div>
+
+        <div className="debug-block">
+          <summary>Raw</summary>
+          <pre>{JSON.stringify(data.raw, null, 2)}</pre>
+        </div>
+
+        <div className="debug-block">
+          <summary>Diff</summary>
+          <pre>{JSON.stringify(diff, null, 2)}</pre>
+        </div>
+      </section>
     </div>
   );
 }
