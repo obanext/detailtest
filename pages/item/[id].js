@@ -369,22 +369,21 @@ export default function Page() {
             )}
           </section>
         ) : (
-          <section className="oclc-all-list">
-            {oclcRows.map((row, index) =>
-              row.type === "section" ? (
-                <div className="oclc-section-row" key={`${row.field}-${index}`}>
-                  {row.field}
-                </div>
-              ) : (
-                <div className="oclc-row" key={`${row.field}-${index}`}>
-                  <div className="oclc-field">{row.field}</div>
-                  <div className="oclc-value">{text(row.value)}</div>
-                </div>
-              )
-            )}
-          </section>
-        )}
-
+         {oclcRows.map((row, index) =>
+  row.type === "section" ? (
+    <div className="spec-row" key={`${row.field}-${index}`}>
+      <div className="spec-label" style={{ fontWeight: "700" }}>
+        {row.field}
+      </div>
+      <div className="spec-value"></div>
+    </div>
+  ) : (
+    <div className="spec-row" key={`${row.field}-${index}`}>
+      <div className="spec-label">{row.field}</div>
+      <div className="spec-value">{text(row.value)}</div>
+    </div>
+  )
+)}
         <section className="debug-section">
           <button type="button" className="tab-button" onClick={downloadCsv}>
             Download mapping CSV
