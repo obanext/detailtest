@@ -16,6 +16,47 @@ const text = (value) => {
 const getBranchField = (branch, key) =>
   asArray(branch?.branches).find((item) => item?._attributes?.key === key)?._text || "";
 
+function flattenOclc(value, prefix = "") {
+  const rows = [];
+
+  if (value === null || value === undefined) {
+    rows.push({ field: prefix, value: "" });
+    return rows;
+  }
+
+  if (typeof value !== "object") {
+    rows.push({ field: prefix, value });
+    return rows;
+  }
+
+  if (Array.isArray(value)) {
+    if (!value.length) {
+      rows.push({ field: prefix, value: "" });
+      return rows;
+    }
+
+    value.forEach((item, index) => {
+      rows.push(...flattenOclc(item, `${prefix}[${index}]`));
+    });
+
+    return rows;
+  }
+
+  const keys = Object.keys(value);
+
+  if (!keys.length) {
+    rows.push({ field: prefix, value: "" });
+    return rows;
+  }
+
+  keys.forEach((key) => {
+    const nextPrefix = prefix ? `${prefix}.${key}` : key;
+    rows.push(...flattenOclc(value[key], nextPrefix));
+  });
+
+  return rows;
+}
+
 export default function Page() {
   const router = useRouter();
   const { id } = router.query;
@@ -143,6 +184,19 @@ export default function Page() {
     }));
   }, [mapped]);
 
+  const oclcRows = useMemo(() => {
+    return [
+      { type: "section", field: "title — bibliografisch", value: "" },
+      ...flattenOclc(raw?.title, "title"),
+      { type: "section", field: "availability — beschikbaarheid", value: "" },
+      ...flattenOclc(raw?.availability, "availability"),
+      { type: "section", field: "summary — titelrelaties/samenvatting", value: "" },
+      ...flattenOclc(raw?.summary, "summary"),
+      { type: "section", field: "itemInformation — holdings/exemplaren", value: "" },
+      ...flattenOclc(raw?.itemInformation, "itemInformation"),
+    ];
+  }, [raw]);
+
   const csvRows = useMemo(() => buildDetailMappingRows(raw, mapped), [raw, mapped]);
 
   const downloadCsv = () => {
@@ -227,11 +281,7 @@ export default function Page() {
 
           <div className="hero-right">
             {coverImage ? (
-              <img
-                src={coverImage}
-                className="cover-large"
-                alt={title || shortTitle || "Cover"}
-              />
+              <img src={coverImage} className="cover-large" alt={title || shortTitle || "Cover"} />
             ) : (
               <div className="cover-placeholder">Geen cover</div>
             )}
@@ -256,6 +306,14 @@ export default function Page() {
               onClick={() => setTab("availability")}
             >
               beschikbaarheid
+            </button>
+
+            <button
+              type="button"
+              className={tab === "oclc" ? "tab-button active" : "tab-button"}
+              onClick={() => setTab("oclc")}
+            >
+              alles oclc
             </button>
           </div>
         </div>
@@ -294,7 +352,7 @@ export default function Page() {
               </table>
             </div>
           </section>
-        ) : (
+        ) : tab === "specs" ? (
           <section className="specs-list">
             {specRows.length ? (
               specRows.map(([label, value]) => (
@@ -308,6 +366,21 @@ export default function Page() {
                 <div className="spec-label">Specificaties</div>
                 <div className="spec-value">Geen specificaties beschikbaar</div>
               </div>
+            )}
+          </section>
+        ) : (
+          <section className="oclc-all-list">
+            {oclcRows.map((row, index) =>
+              row.type === "section" ? (
+                <div className="oclc-section-row" key={`${row.field}-${index}`}>
+                  {row.field}
+                </div>
+              ) : (
+                <div className="oclc-row" key={`${row.field}-${index}`}>
+                  <div className="oclc-field">{row.field}</div>
+                  <div className="oclc-value">{text(row.value)}</div>
+                </div>
+              )
             )}
           </section>
         )}
