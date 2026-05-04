@@ -75,9 +75,11 @@ export default function Page() {
     fetch(`/api/wise?id=${encodeURIComponent(id)}`)
       .then(async (response) => {
         const json = await response.json().catch(() => null);
+
         if (!response.ok) {
           throw new Error(json?.error || `Request failed with status ${response.status}`);
         }
+
         return json;
       })
       .then((json) => {
@@ -188,10 +190,13 @@ export default function Page() {
     return [
       { type: "section", field: "title — bibliografisch", value: "" },
       ...flattenOclc(raw?.title, "title"),
+
       { type: "section", field: "availability — beschikbaarheid", value: "" },
       ...flattenOclc(raw?.availability, "availability"),
+
       { type: "section", field: "summary — titelrelaties/samenvatting", value: "" },
       ...flattenOclc(raw?.summary, "summary"),
+
       { type: "section", field: "itemInformation — holdings/exemplaren", value: "" },
       ...flattenOclc(raw?.itemInformation, "itemInformation"),
     ];
@@ -249,6 +254,7 @@ export default function Page() {
             <div className="card-grid top-cards">
               <section className="info-card">
                 <h2>Specificaties</h2>
+
                 {topSpecs.length ? (
                   <ul className="plain-list">
                     {topSpecs.map((value, index) => (
@@ -264,6 +270,7 @@ export default function Page() {
 
               <section className="info-card">
                 <h2>Onderwerpen</h2>
+
                 {subjects.length ? (
                   <ul className="plain-list">
                     {subjects.map((value, index) => (
@@ -330,6 +337,7 @@ export default function Page() {
                     <th>Status</th>
                   </tr>
                 </thead>
+
                 <tbody>
                   {availabilityRows.length ? (
                     availabilityRows.map((row) => (
@@ -369,21 +377,25 @@ export default function Page() {
             )}
           </section>
         ) : (
-         {oclcRows.map((row, index) =>
-  row.type === "section" ? (
-    <div className="spec-row" key={`${row.field}-${index}`}>
-      <div className="spec-label" style={{ fontWeight: "700" }}>
-        {row.field}
-      </div>
-      <div className="spec-value"></div>
-    </div>
-  ) : (
-    <div className="spec-row" key={`${row.field}-${index}`}>
-      <div className="spec-label">{row.field}</div>
-      <div className="spec-value">{text(row.value)}</div>
-    </div>
-  )
-)}
+          <section className="specs-list">
+            {oclcRows.map((row, index) =>
+              row.type === "section" ? (
+                <div className="spec-row" key={`${row.field}-${index}`}>
+                  <div className="spec-label" style={{ fontWeight: 700 }}>
+                    {row.field}
+                  </div>
+                  <div className="spec-value"></div>
+                </div>
+              ) : (
+                <div className="spec-row" key={`${row.field}-${index}`}>
+                  <div className="spec-label">{row.field}</div>
+                  <div className="spec-value">{text(row.value)}</div>
+                </div>
+              )
+            )}
+          </section>
+        )}
+
         <section className="debug-section">
           <button type="button" className="tab-button" onClick={downloadCsv}>
             Download mapping CSV
@@ -391,6 +403,7 @@ export default function Page() {
 
           <details className="debug-block">
             <summary>OCLC API calls</summary>
+
             <div className="debug-content">
               {calls.length ? (
                 calls.map((call, index) => (
@@ -398,6 +411,7 @@ export default function Page() {
                     <summary>
                       {call?.url || "Onbekende call"} | {call?.status || "?"}
                     </summary>
+
                     <pre>{pretty(call?.body ?? call)}</pre>
                   </details>
                 ))
@@ -409,6 +423,7 @@ export default function Page() {
 
           <details className="debug-block">
             <summary>Mapped output</summary>
+
             <div className="debug-content">
               <pre>{pretty(mapped)}</pre>
             </div>
