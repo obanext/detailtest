@@ -6,179 +6,330 @@ const text = (value) => {
   return String(value).trim();
 };
 
-function firstResult(mapped = {}) {
-  return asArray(mapped?.results?.result)[0] || {};
-}
+const first = (...values) => values.find((value) => text(value)) || "";
 
-function firstRawTitle(raw = {}) {
-  return asArray(raw?.titles)[0]?.title || {};
-}
+function splitName(value = "") {
+  const source = text(value);
 
-export function buildSearchMappingRows(raw = {}, mapped = {}) {
-  const result = firstResult(mapped);
-  const title = firstRawTitle(raw);
+  if (!source) {
+    return { first: "", last: "" };
+  }
 
-  const rows = [
-    [
-      "Perspectives",
-      "raw.perspectives[]",
-      "/branch/1000/clienttype/default/perspective",
-      "perspective[]",
-      JSON.stringify(raw?.perspectives || []),
-      JSON.stringify(raw?.perspectives || []),
-    ],
-    [
-      "Aantal resultaten",
-      "meta.count._text",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "total/count",
-      mapped?.meta?.count?._text || "",
-      String(raw?.total || ""),
-    ],
-    [
-      "Zoekterm",
-      "meta.query._text",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "term",
-      mapped?.meta?.query?._text || "",
-      raw?.query || "",
-    ],
-    [
-      "Geselecteerde catalogus",
-      "raw.selectedPerspectiveId",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "perspectiveId",
-      raw?.selectedPerspectiveId || "",
-      raw?.selectedPerspectiveId || "",
-    ],
-    [
-      "Geselecteerde scope",
-      "raw.selectedSearchScope",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "searchScope",
-      raw?.selectedSearchScope || "",
-      raw?.selectedSearchScope || "",
-    ],
-    [
-      "Geselecteerde sortering",
-      "raw.selectedSort",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "sort",
-      raw?.selectedSort || "",
-      raw?.selectedSort || "",
-    ],
-    [
-      "Facet filters",
-      "raw.selectedFacetFilters[]",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "facetFilter",
-      JSON.stringify(raw?.selectedFacetFilters || []),
-      JSON.stringify(raw?.selectedFacetFilters || []),
-    ],
-    [
-      "Facetten",
-      "raw.searchResponse.facets",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "facets/filters/refinements",
-      JSON.stringify(raw?.searchResponse?.facets || raw?.searchResponse?.filters || raw?.searchResponse?.refinements || []),
-      JSON.stringify(raw?.searchResponse?.facets || raw?.searchResponse?.filters || raw?.searchResponse?.refinements || []),
-    ],
-    [
-      "Resultaat ID",
-      "results.result[].id._attributes.nativeid",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "id/titleId",
-      result?.id?._attributes?.nativeid || "",
-      title?.id || "",
-    ],
-    [
-      "Titel",
-      "results.result[].titles.title._text",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "title",
-      result?.titles?.title?._text || "",
-      title?.title || "",
-    ],
-    [
-      "Auteur",
-      "results.result[].authors.main-author._text",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "author.description",
-      result?.authors?.["main-author"]?._text || "",
-      title?.author?.description || "",
-    ],
-    [
-      "Cover",
-      "results.result[].coverimages.coverimage._text",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "imageUrls.small/medium/large",
-      result?.coverimages?.coverimage?._text || "",
-      title?.imageUrls?.small || title?.imageUrls?.medium || title?.imageUrls?.large || "",
-    ],
-    [
-      "Jaar",
-      "results.result[].publication.year._text",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "publicationYear",
-      result?.publication?.year?._text || "",
-      title?.publicationYear || "",
-    ],
-    [
-      "Samenvatting",
-      "results.result[].summaries.summary._text",
-      "/branch/1000/perspective/{perspectiveId}/search",
-      "contents",
-      result?.summaries?.summary?._text || "",
-      title?.contents || "",
-    ],
-    [
-      "Suggesties",
-      "suggestions.suggestion[]",
-      "/branch/1000/searchsuggestion",
-      "suggestions",
-      JSON.stringify(asArray(mapped?.suggestions?.suggestion).map((x) => x?._text).filter(Boolean)),
-      JSON.stringify(raw?.suggestions || []),
-    ],
-  ];
+  if (source.includes(",")) {
+    const [last = "", ...rest] = source.split(",");
+    return {
+      first: text(rest.join(", ")),
+      last: text(last),
+    };
+  }
 
-  return rows.map(([label, jsonPath, endpoint, oclcField, mappedValue, oclcValue]) => ({
-    label: text(label),
-    jsonPath: text(jsonPath),
-    endpoint: text(endpoint),
-    oclcField: text(oclcField),
-    mappedValue: text(mappedValue),
-    oclcValue: text(oclcValue),
-  }));
-}
+  const parts = source.split(/\s+/).filter(Boolean);
 
-export function toSearchMappingCsv(rows = []) {
-  const headers = [
-    "OBA zoekpagina",
-    "raw json parsed veld",
-    "OCLC endpoint",
-    "OCLC veld",
-    "OCLC waarde",
-    "mapped waarde",
-  ];
-
-  const escape = (value) => {
-    const stringValue = value === null || value === undefined ? "" : String(value);
-    return `"${stringValue.replace(/"/g, '""')}"`;
+  return {
+    first: text(parts.slice(0, -1).join(" ")),
+    last: text(parts.slice(-1).join(" ")),
   };
+}
+
+function normalizeId(value = "") {
+  return text(value).replace(/^PPN:/i, "");
+}
+
+function coverImage(title = {}) {
+  return first(title.imageUrls?.small, title.imageUrls?.medium, title.imageUrls?.large);
+}
+
+function getDetailId(entry = {}) {
+  return first(
+    entry.resolvedDetailId,
+    entry.id,
+    entry.title?.id
+  );
+}
+
+function detailHref(entry = {}) {
+  const id = getDetailId(entry);
+  return `/item/${encodeURIComponent(id)}`;
+}
+
+function normalizeFormat(title = {}) {
+  const media = text(title.media?.description);
+  const raw = text(title.media?.icon).toLowerCase();
+
+  if (!media && !raw) return [];
 
   return [
-    headers.join(","),
-    ...rows.map((row) =>
-      [
-        row.label,
-        row.jsonPath,
-        row.endpoint,
-        row.oclcField,
-        row.oclcValue,
-        row.mappedValue,
-      ]
-        .map(escape)
-        .join(",")
-    ),
-  ].join("\n");
+    {
+      _attributes: {
+        translation: "Formaat",
+        "search-method": "format",
+        "search-term": raw,
+        "search-type": "searcher",
+        raw,
+      },
+      _text: media,
+    },
+  ];
+}
+
+function normalizeSubjects(title = {}) {
+  return [
+    ...asArray(title.subjects),
+    ...asArray(title.subjectSchoolWise),
+  ]
+    .map((subject) => text(subject?.description || subject?._text || subject?.label || subject))
+    .filter(Boolean)
+    .map((value) => ({
+      _attributes: {
+        translation: "Onderwerp",
+        "search-method": "subject",
+        "search-term": value,
+        "search-type": "fuzzy,precise",
+      },
+      _text: value,
+    }));
+}
+
+function normalizeResult(entry = {}) {
+  const title = entry.title || {};
+  const detailId = getDetailId(entry);
+  const nativeId = normalizeId(detailId);
+  const sourceId = normalizeId(first(entry.sourceId, title.sourceId, title.ppn?.[0], title.ppn));
+  const authorName = text(title.author?.description || title.author);
+  const authorParts = splitName(authorName);
+  const isbn = text(asArray(title.isbn)[0]);
+  const ppn = text(asArray(title.ppn)[0]) || sourceId || nativeId;
+  const language = asArray(title.language)[0] || {};
+  const subjects = normalizeSubjects(title);
+  const formats = normalizeFormat(title);
+
+  return {
+    id: {
+      _attributes: {
+        nativeid: nativeId,
+        sourceid: sourceId,
+        ds: "library/v/OBA",
+        translation: "ID",
+        "search-method": "id",
+        "search-term": `|oba-catalogus|${nativeId}`,
+        "search-type": "precise",
+      },
+      _text: `|oba-catalogus|${nativeId}`,
+    },
+
+    "detail-page": {
+      _text: detailHref(entry),
+    },
+
+    coverimages: {
+      coverimage: {
+        _attributes: {
+          translation: "Cover",
+        },
+        _text: coverImage(title),
+      },
+    },
+
+    titles: {
+      title: {
+        _attributes: {
+          translation: "Titel",
+          "search-method": "title",
+          "search-term": text(title.title || title.mainTitle),
+          "search-type": "fuzzy",
+        },
+        _text: text(title.title || title.mainTitle),
+      },
+      "short-title": {
+        _attributes: {
+          translation: "Korte titel",
+        },
+        _text: first(title.mainTitle, title.title),
+      },
+    },
+
+    authors: {
+      "main-author": {
+        _attributes: {
+          "search-method": "author",
+          "search-term": authorName,
+          "search-type": "searcher",
+          translation: "Auteur (hoofd)",
+          firstname: authorParts.first,
+          lastname: authorParts.last,
+          creatortype: authorName ? "person" : "",
+          main: "true",
+        },
+        _text: authorName,
+      },
+    },
+
+    formats: {
+      format: formats,
+    },
+
+    publication: {
+      year: {
+        _attributes: {
+          translation: "Publicatiejaar",
+          "search-method": "year",
+          "search-term": text(title.publicationYear),
+          "search-type": "searcher",
+        },
+        _text: text(title.publicationYear),
+      },
+      publishers: {
+        publisher: {
+          _attributes: {
+            translation: "Uitgever",
+            "search-method": "publisher",
+            "search-term": text(title.publisher),
+            "search-type": "searcher",
+            year: text(title.publicationYear),
+            place: "",
+          },
+          _text: first(title.publisher, title.publicationDetails),
+        },
+      },
+    },
+
+    languages: {
+      language: {
+        _attributes: {
+          translation: "Taal",
+          "search-method": "language",
+          "search-term": text(language.code).toLowerCase(),
+          "search-type": "searcher",
+          raw: text(language.code).toLowerCase(),
+        },
+        _text: text(language.description || language),
+      },
+    },
+
+    description: {
+      pages: {
+        _attributes: {
+          translation: "Pagina's",
+        },
+        _text: text(title.annotationCollation).split(":")[0]?.trim() || "",
+      },
+      "physical-description": {
+        _attributes: {
+          translation: "Kenmerken",
+        },
+        _text: text(title.annotationCollation),
+      },
+    },
+
+    summaries: {
+      summary: {
+        _attributes: {
+          translation: "Samenvatting",
+        },
+        _text: first(title.contents, title.contentsSchoolWise, title.summary),
+      },
+    },
+
+    subjects: {
+      "topical-subject": subjects,
+    },
+
+    "target-audiences": {
+      "target-audience": {
+        _attributes: {
+          translation: "Doelgroep",
+          "search-method": "targetaudience",
+          "search-term": text(title.audience?.code),
+          "search-type": "searcher",
+          raw: text(title.audience?.code),
+        },
+        _text: text(title.audience?.description),
+      },
+    },
+
+    identifiers: {
+      "isbn-id": {
+        _attributes: {
+          "search-method": "isbn",
+          "search-term": isbn,
+          "search-type": "searcher",
+          translation: "ISBN",
+        },
+        _text: isbn,
+      },
+      "normalized-isbn-id": {
+        _attributes: {
+          translation: "ISBN (genormaliseerd)",
+        },
+        _text: isbn,
+      },
+      "ppn-id": {
+        _attributes: {
+          "search-method": "ppn",
+          "search-term": ppn,
+          "search-type": "precise",
+          translation: "PICA productienummer",
+        },
+        _text: ppn,
+      },
+    },
+
+    "undup-info": {
+      _attributes: {
+        key: `|oba-catalogus|${nativeId}`,
+        cnt: "",
+        sort: "year",
+        frabl: sourceId,
+        "frabl-global-count": "",
+        "frabl-key1": text(title.title || title.mainTitle),
+        "frabl-key2": authorName,
+        translation: "Informatie over dubbele items",
+        "undup-all-search": "",
+      },
+    },
+
+    custom: {},
+  };
+}
+
+export function mapWiseSearchToObaFull(raw = {}) {
+  const titles = asArray(raw.titles).filter((entry) => entry?.title && typeof entry.title === "object");
+  const results = titles.map(normalizeResult);
+
+  return {
+    _attributes: {
+      version: "1",
+      "detail-level": "Default",
+      source: "oclc-wise",
+    },
+
+    meta: {
+      count: {
+        _text: String(raw.total || results.length || 0),
+      },
+      page: {
+        _text: String(raw.page || 1),
+      },
+      query: {
+        _text: text(raw.query),
+      },
+    },
+
+    feedbacks: {},
+
+    results: {
+      result: results,
+    },
+
+    suggestions: {
+      suggestion: asArray(raw.suggestions)
+        .map((item) => ({
+          _text:
+            typeof item === "string"
+              ? item
+              : text(item?.text || item?.value || item?.suggestion || item?.term),
+        }))
+        .filter((item) => item._text),
+    },
+  };
 }
