@@ -20,7 +20,15 @@ const discoveryHeaders = {
 async function fetchSafe(url, headers = searchHeaders) {
   try {
     const res = await fetch(url, { headers });
-    const body = await res.json().catch(() => null);
+    const bodyText = await res.text();
+
+    let body = null;
+    try {
+      body = bodyText ? JSON.parse(bodyText) : null;
+    } catch {
+      body = bodyText || null;
+    }
+
     return { url, status: res.status, ok: res.ok, body };
   } catch (error) {
     return { url, status: 500, ok: false, body: null, error: error.message };
@@ -48,7 +56,7 @@ function extractPerspectives(body) {
 }
 
 function extractSearchItems(body) {
-  if (!body) return [];
+  if (!body || typeof body !== "object") return [];
 
   const candidates =
     body.titles ||
@@ -58,6 +66,8 @@ function extractSearchItems(body) {
     body.result ||
     body.content ||
     body.documents ||
+    body.titleSummaries ||
+    body.summaries ||
     [];
 
   return asArray(candidates);
@@ -80,7 +90,7 @@ function extractId(item) {
 }
 
 function extractTotal(body, fallback) {
-  if (!body) return fallback;
+  if (!body || typeof body !== "object") return fallback;
 
   return (
     body.total ||
@@ -164,7 +174,8 @@ export default async function handler(req, res) {
     const suggestionUrl =
       `${BASE}/branch/${BRANCH_ID}/searchsuggestion` +
       `?term=${encodeURIComponent(query)}` +
-      `&searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}`;
+      `&searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}` +
+      `&clientType=default`;
 
     const suggestion = await fetchSafe(suggestionUrl, searchHeaders);
 
@@ -209,23 +220,25 @@ export default async function handler(req, res) {
     return res.status(200).json({ raw, mapped });
   }
 
-  let searchUrl =
-    `${BASE}/branch/${BRANCH_ID}/perspective/${encodeURIComponent(perspectiveId || DEFAULT_PERSPECTIVE_ID)}/search` +
-    `?searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}` +
+  let titleSummaryUrl =
+    `${BASE}/branch/${BRANCH_ID}/perspective/${encodeURIComponent(
+      perspectiveId || DEFAULT_PERSPECTIVE_ID
+    )}/titlesummary` +
+    `?returnType=default` +
     `&term=${encodeURIComponent(query)}` +
     `&offset=${offset}` +
     `&limit=${limitNumber}` +
-    `&returnType=default` +
+    `&searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}` +
     `&filterAvailableTitles=${encodeURIComponent(filterAvailableTitles)}` +
     `&enableMultiSelectFaceting=true`;
 
   if (sort) {
-    searchUrl = appendParam(searchUrl, "sort", sort);
+    titleSummaryUrl = appendParam(titleSummaryUrl, "sort", sort);
   }
 
-  searchUrl = appendRepeatedParam(searchUrl, "facetFilter", facetFilter);
+  titleSummaryUrl = appendRepeatedParam(titleSummaryUrl, "facetFilter", facetFilter);
 
-  const searchCall = await fetchSafe(searchUrl, searchHeaders);
+  const searchCall = await fetchSafe(titleSummaryUrl, searchHeaders);
   const searchItems = extractSearchItems(searchCall.body);
   const total = extractTotal(searchCall.body, searchItems.length);
 
@@ -263,7 +276,8 @@ export default async function handler(req, res) {
   const suggestionUrl =
     `${BASE}/branch/${BRANCH_ID}/searchsuggestion` +
     `?term=${encodeURIComponent(query)}` +
-    `&searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}`;
+    `&searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}` +
+    `&clientType=default`;
 
   const suggestion = await fetchSafe(suggestionUrl, searchHeaders);
 
@@ -293,5 +307,5 @@ export default async function handler(req, res) {
 
   const mapped = mapWiseSearchToObaFull(raw);
 
-  res.status(200).json({ raw, mapped });
+  return res.status(200).json({ raw, mapped });
 }
