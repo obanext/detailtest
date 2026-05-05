@@ -10,30 +10,6 @@ const searchHeaders = {
   wise_key: process.env.WISE_SEARCH_KEY,
 };
 
-const discoveryHeaders = {
-  Accept: "application/json",
-  application: process.env.APPLICATION,
-  WISE_KEY: process.env.WISE_KEY,
-};
-
-async function fetchSafe(url, headers = searchHeaders) {
-  try {
-    const res = await fetch(url, { headers });
-    const bodyText = await res.text();
-
-    let body = null;
-    try {
-      body = bodyText ? JSON.parse(bodyText) : null;
-    } catch {
-      body = bodyText || null;
-    }
-
-    return { url, status: res.status, ok: res.ok, body };
-  } catch (error) {
-    return { url, status: 500, ok: false, body: null, error: error.message };
-  }
-}
-
 const asArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 
 const text = (value) => {
@@ -42,6 +18,39 @@ const text = (value) => {
   return String(value).trim();
 };
 
+function isNumericId(value) {
+  return /^\d+$/.test(text(value));
+}
+
+async function fetchSafe(url, headers = searchHeaders) {
+  try {
+    const response = await fetch(url, { headers });
+    const bodyText = await response.text();
+
+    let body = null;
+    try {
+      body = bodyText ? JSON.parse(bodyText) : null;
+    } catch {
+      body = bodyText || null;
+    }
+
+    return {
+      url,
+      status: response.status,
+      ok: response.ok,
+      body,
+    };
+  } catch (error) {
+    return {
+      url,
+      status: 500,
+      ok: false,
+      body: null,
+      error: error.message,
+    };
+  }
+}
+
 function extractPerspectives(body) {
   return asArray(body?.perspective);
 }
@@ -49,82 +58,33 @@ function extractPerspectives(body) {
 function extractSearchItems(body) {
   if (!body || typeof body !== "object") return [];
 
-  const candidates =
+  return asArray(
     body.titles ||
-    body.title ||
-    body.items ||
-    body.results ||
-    body.result ||
-    body.content ||
-    body.documents ||
-    body.titleSummaries ||
-    body.summaries ||
-    [];
-
-  return asArray(candidates);
-}
-
-function extractId(item) {
-  if (!item) return "";
-
-  if (typeof item === "string" || typeof item === "number") return String(item);
-
-  return (
-    item.id ||
-    item.titleId ||
-    item.bibliographicRecordId ||
-    item.recordId ||
-    item?.title?.id ||
-    item?.document?.id ||
-    ""
+      body.title ||
+      body.items ||
+      body.results ||
+      body.result ||
+      body.content ||
+      body.documents ||
+      body.titleSummaries ||
+      body.summaries ||
+      []
   );
 }
 
-function extractPpn(item) {
-  if (!item || typeof item !== "object") return "";
+function extractChildTitleId(item) {
+  const id =
+    item?.childTitleList?.[0]?.childTitleId ||
+    item?.title?.childTitleList?.[0]?.childTitleId ||
+    item?.childTitleId ||
+    item?.title?.childTitleId ||
+    "";
 
-  const candidates = [
-    item.ppn,
-    item.ppnId,
-    item.ppnNumber,
-    item?.title?.ppn,
-    item?.title?.ppnId,
-    item?.identifiers?.ppn,
-    item?.identifiers?.["ppn-id"],
-    item?.identifier?.ppn,
-    item?.record?.ppn,
-    item?.document?.ppn,
-  ];
-
-  for (const candidate of candidates) {
-    const value = asArray(candidate)[0];
-
-    if (typeof value === "string" || typeof value === "number") {
-      return text(value).replace(/^PPN:/i, "");
-    }
-
-    if (value && typeof value === "object") {
-      const nested =
-        value._text ||
-        value.value ||
-        value.id ||
-        value.searchTerm ||
-        value?.["_text"];
-
-      if (nested) return text(nested).replace(/^PPN:/i, "");
-    }
-  }
-
-  const id = text(extractId(item));
-  if (id.toUpperCase().startsWith("PPN:")) {
-    return id.replace(/^PPN:/i, "");
-  }
-
-  return "";
+  return isNumericId(id) ? text(id) : "";
 }
 
-function isNumericId(value) {
-  return /^\d+$/.test(text(value));
+function extractSourceId(item) {
+  return text(item?.id || item?.title?.id || item?.frbrkey || item?.title?.frbrkey || "");
 }
 
 function extractTotal(body, fallback) {
@@ -142,52 +102,6 @@ function extractTotal(body, fallback) {
   );
 }
 
-function looksLikeTitle(item) {
-  if (!item || typeof item !== "object") return false;
-
-  return Boolean(
-    item.title ||
-      item.mainTitle ||
-      item.author ||
-      item.imageUrls ||
-      item.publicationYear ||
-      item.isbn ||
-      item.ppn
-  );
-}
-
-function normalizeSearchTitleItem(item, resolvedDetailId = "") {
-  if (!item || typeof item !== "object") return null;
-
-  if (!isNumericId(resolvedDetailId)) return null;
-
-  if (item.title && typeof item.title === "object") {
-    return {
-      id: resolvedDetailId,
-      sourceId: extractId(item),
-      resolvedDetailId,
-      title: {
-        ...item.title,
-        id: resolvedDetailId,
-      },
-    };
-  }
-
-  if (looksLikeTitle(item)) {
-    return {
-      id: resolvedDetailId,
-      sourceId: extractId(item),
-      resolvedDetailId,
-      title: {
-        ...item,
-        id: resolvedDetailId,
-      },
-    };
-  }
-
-  return null;
-}
-
 function appendParam(url, key, value) {
   if (value === undefined || value === null || value === "") return url;
   const separator = url.includes("?") ? "&" : "?";
@@ -198,55 +112,19 @@ function appendRepeatedParam(url, key, values) {
   return asArray(values).reduce((nextUrl, value) => appendParam(nextUrl, key, value), url);
 }
 
-async function resolvePpnToTitleId(ppn) {
-  const cleanPpn = text(ppn).replace(/^PPN:/i, "");
-  if (!cleanPpn) return { id: "", call: null };
+function normalizeSearchItem(item) {
+  const detailId = extractChildTitleId(item);
 
-  const call = await fetchSafe(
-    `${BASE}/titleid/ppn/${encodeURIComponent(cleanPpn)}`,
-    discoveryHeaders
-  );
-
-  const body = call.body;
-  let id = "";
-
-  if (Array.isArray(body) && body.length) {
-    id =
-      body[0]?.bibliographicRecordId ||
-      body[0]?.id ||
-      body[0]?.titleId ||
-      body[0]?.recordId ||
-      "";
-  } else if (body && typeof body === "object") {
-    id =
-      body.bibliographicRecordId ||
-      body.id ||
-      body.titleId ||
-      body.recordId ||
-      "";
-  }
-
-  return { id: text(id), call };
-}
-
-async function resolveItemToDetailId(item) {
-  const rawId = text(extractId(item));
-
-  if (isNumericId(rawId)) {
-    return { detailId: rawId, calls: [] };
-  }
-
-  const ppn = extractPpn(item);
-
-  if (!ppn) {
-    return { detailId: "", calls: [] };
-  }
-
-  const resolved = await resolvePpnToTitleId(ppn);
+  if (!detailId) return null;
 
   return {
-    detailId: isNumericId(resolved.id) ? resolved.id : "",
-    calls: resolved.call ? [resolved.call] : [],
+    id: detailId,
+    sourceId: extractSourceId(item),
+    resolvedDetailId: detailId,
+    title: {
+      ...item,
+      id: detailId,
+    },
   };
 }
 
@@ -276,7 +154,7 @@ export default async function handler(req, res) {
   const offset = (pageNumber - 1) * limitNumber;
 
   const perspectiveUrl = `${BASE}/branch/${BRANCH_ID}/clienttype/default/perspective`;
-  const perspectiveCall = await fetchSafe(perspectiveUrl, searchHeaders);
+  const perspectiveCall = await fetchSafe(perspectiveUrl);
   const perspectives = extractPerspectives(perspectiveCall.body);
 
   if (!query) {
@@ -301,7 +179,6 @@ export default async function handler(req, res) {
     };
 
     const mapped = mapWiseSearchToObaFull(raw);
-
     return res.status(200).json({ raw, mapped });
   }
 
@@ -319,81 +196,20 @@ export default async function handler(req, res) {
 
   titleSummaryUrl = appendRepeatedParam(titleSummaryUrl, "facetFilter", facetFilter);
 
-  const searchCall = await fetchSafe(titleSummaryUrl, searchHeaders);
+  const searchCall = await fetchSafe(titleSummaryUrl);
   const searchItems = extractSearchItems(searchCall.body);
 
-  const resolvedItems = await Promise.all(
-    searchItems.slice(0, limitNumber).map(async (item) => {
-      const resolved = await resolveItemToDetailId(item);
-
-      return {
-        item,
-        detailId: resolved.detailId,
-        resolveCalls: resolved.calls,
-      };
-    })
-  );
-
-  const numericResolvedItems = resolvedItems.filter((entry) => isNumericId(entry.detailId));
-
-  const directTitles = numericResolvedItems
-    .map(({ item, detailId }) => normalizeSearchTitleItem(item, detailId))
-    .filter(Boolean);
-
-  const directTitleIds = new Set(directTitles.map((entry) => String(entry.id)));
-
-  const idsToHydrate = numericResolvedItems
-    .map((entry) => entry.detailId)
-    .filter((id) => isNumericId(id))
-    .filter((id) => !directTitleIds.has(String(id)))
-    .slice(0, limitNumber);
-
-  const titleCalls = await Promise.all(
-    idsToHydrate.map(async (id) => {
-      const call = await fetchSafe(
-        `${BASE}/discovery/title/${encodeURIComponent(id)}`,
-        discoveryHeaders
-      );
-
-      return {
-        id,
-        call,
-        title: call.body,
-      };
-    })
-  );
-
-  const hydratedTitles = titleCalls
-    .filter((entry) => isNumericId(entry.id))
-    .filter((entry) => entry.title && typeof entry.title === "object")
-    .filter((entry) => entry.title.id || entry.title.title || entry.title.mainTitle)
-    .map((entry) => ({
-      id: entry.id,
-      sourceId: entry.id,
-      resolvedDetailId: entry.id,
-      title: {
-        ...entry.title,
-        id: entry.id,
-      },
-    }));
-
-  const allResolvedIds = [
-    ...directTitles.map((entry) => entry.id),
-    ...hydratedTitles.map((entry) => entry.id),
-  ]
-    .filter(Boolean)
-    .filter((id) => isNumericId(id));
-
-  const totalFromOclc = extractTotal(searchCall.body, allResolvedIds.length);
-  const total = allResolvedIds.length || totalFromOclc || 0;
+  const titles = searchItems.map(normalizeSearchItem).filter(Boolean);
+  const ids = titles.map((entry) => entry.id).filter(isNumericId);
+  const total = extractTotal(searchCall.body, ids.length);
 
   const raw = {
     query,
     page: pageNumber,
     limit: limitNumber,
     total,
-    ids: allResolvedIds,
-    titles: [...directTitles, ...hydratedTitles],
+    ids,
+    titles,
     suggestions: [],
     perspectives,
     selectedPerspectiveId: String(perspectiveId || DEFAULT_PERSPECTIVE_ID),
@@ -401,23 +217,17 @@ export default async function handler(req, res) {
     selectedSort: "",
     selectedFacetFilters: asArray(facetFilter),
     searchResponse: searchCall.body,
-    resolvedItems: resolvedItems.map((entry) => ({
-      sourceId: extractId(entry.item),
-      ppn: extractPpn(entry.item),
-      detailId: entry.detailId,
-      usable: isNumericId(entry.detailId),
+    resolvedItems: searchItems.map((item) => ({
+      sourceId: extractSourceId(item),
+      childTitleId: extractChildTitleId(item),
+      detailId: extractChildTitleId(item),
+      usable: isNumericId(extractChildTitleId(item)),
     })),
     debug: {
-      calls: [
-        perspectiveCall,
-        searchCall,
-        ...resolvedItems.flatMap((entry) => entry.resolveCalls),
-        ...titleCalls.map((entry) => entry.call),
-      ],
+      calls: [perspectiveCall, searchCall],
     },
   };
 
   const mapped = mapWiseSearchToObaFull(raw);
-
   return res.status(200).json({ raw, mapped });
 }
