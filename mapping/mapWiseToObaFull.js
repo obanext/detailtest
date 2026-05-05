@@ -110,7 +110,7 @@ export function mapWiseToObaFull({ title, availability, summary, itemInformation
     },
 
     coverimages: {
-      coverimage: { _text: text(title.imageUrls?.medium) }
+      coverimage: { _text: text(title.imageUrls?.large) }
     },
 
     "librarian-info": {
