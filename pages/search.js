@@ -13,6 +13,18 @@ const text = (value) => {
   return String(value).trim();
 };
 
+const SORT_LABELS = {
+  "2910": "relevantie",
+  "2911": "populariteit",
+  "2912": "jaar",
+  "2913": "auteur",
+  "2914": "titel",
+};
+
+const DEFAULT_PERSPECTIVE_ID = "3687";
+const DEFAULT_SCOPE = "anything";
+const DEFAULT_SORT = "2910";
+
 function idForDetail(result = {}) {
   const detailPage = text(result?.["detail-page"]?._text);
 
@@ -37,9 +49,72 @@ function subjects(result = {}) {
     .filter(Boolean);
 }
 
+function perspectiveLabel(perspective = {}) {
+  return text(perspective.labelText || perspective.labelKey || perspective.id);
+}
+
+function sortLabel(sort = {}) {
+  return SORT_LABELS[String(sort.id)] || text(sort.labelText || sort.labelKey || sort.id);
+}
+
+function extractFacetGroups(searchResponse = {}, perspectives = [], selectedPerspectiveId = "") {
+  const rawGroups =
+    searchResponse.facets ||
+    searchResponse.facet ||
+    searchResponse.filters ||
+    searchResponse.filter ||
+    searchResponse.refinements ||
+    searchResponse.refinement ||
+    [];
+
+  const groups = asArray(rawGroups)
+    .map((group) => {
+      const label = text(group.labelText || group.labelKey || group.name || group.field || group.id);
+      const field = text(group.field || group.name || group.key || group.id || group.labelKey);
+
+      const rawValues =
+        group.values ||
+        group.value ||
+        group.items ||
+        group.options ||
+        group.entries ||
+        group.buckets ||
+        [];
+
+      const values = asArray(rawValues)
+        .map((item) => ({
+          label: text(item.labelText || item.label || item.name || item.value || item.key || item.id),
+          value: text(item.value || item.key || item.id || item.name || item.label),
+          count: item.count ?? item.total ?? item.numberOfResults ?? item.hits ?? "",
+          facetFilter:
+            text(item.facetFilter || item.filter || item.query) ||
+            (field && text(item.value || item.key || item.id || item.name || item.label)
+              ? `${field}:${text(item.value || item.key || item.id || item.name || item.label)}`
+              : ""),
+        }))
+        .filter((item) => item.label || item.value);
+
+      return { label, field, values };
+    })
+    .filter((group) => group.label || group.values.length);
+
+  if (groups.length) return groups;
+
+  const selectedPerspective =
+    asArray(perspectives).find((item) => String(item.id) === String(selectedPerspectiveId)) ||
+    asArray(perspectives)[0];
+
+  return asArray(selectedPerspective?.facets)
+    .map((facet) => ({
+      label: text(facet.labelText || facet.labelKey || facet.id),
+      field: text(facet.id || facet.labelKey),
+      values: [],
+    }))
+    .filter((group) => group.label);
+}
+
 export default function SearchPage() {
   const router = useRouter();
-  const initialQuery = typeof router.query.q === "string" ? router.query.q : "";
 
   const [query, setQuery] = useState("");
   const [data, setData] = useState(null);
@@ -48,17 +123,37 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const [perspectiveId, setPerspectiveId] = useState(DEFAULT_PERSPECTIVE_ID);
+  const [searchScope, setSearchScope] = useState(DEFAULT_SCOPE);
+  const [sort, setSort] = useState(DEFAULT_SORT);
+  const [facetFilters, setFacetFilters] = useState([]);
+
   const page = Number(router.query.page || 1);
 
   useEffect(() => {
     if (!router.isReady) return;
 
     const q = typeof router.query.q === "string" ? router.query.q : "";
-    setQuery(q);
+    const p = typeof router.query.perspectiveId === "string" ? router.query.perspectiveId : DEFAULT_PERSPECTIVE_ID;
+    const scope = typeof router.query.searchScope === "string" ? router.query.searchScope : DEFAULT_SCOPE;
+    const sortValue = typeof router.query.sort === "string" ? router.query.sort : DEFAULT_SORT;
+    const filters = asArray(router.query.facetFilter).map(text).filter(Boolean);
 
-    if (q) {
-      runSearch(q, page);
-    }
+    setQuery(q);
+    setPerspectiveId(p);
+    setSearchScope(scope);
+    setSort(sortValue);
+    setFacetFilters(filters);
+
+    runSearch({
+      q,
+      nextPage: page,
+      nextPerspectiveId: p,
+      nextSearchScope: scope,
+      nextSort: sortValue,
+      nextFacetFilters: filters,
+      replaceUrl: false,
+    });
   }, [router.isReady]);
 
   useEffect(() => {
@@ -70,14 +165,14 @@ export default function SearchPage() {
     }
 
     const timer = setTimeout(() => {
-      fetch(`/api/search?q=${encodeURIComponent(q)}&suggest=1`)
+      fetch(`/api/search?q=${encodeURIComponent(q)}&suggest=1&searchScope=${encodeURIComponent(searchScope)}`)
         .then((response) => response.json())
         .then((json) => {
           const values = asArray(json?.suggestions)
             .map((item) =>
               typeof item === "string"
                 ? item
-                : text(item?.text || item?.value || item?.suggestion || item?.term)
+                : text(item?.text || item?.value || item?.suggestion || item?.term || item?.title)
             )
             .filter(Boolean);
 
@@ -87,18 +182,78 @@ export default function SearchPage() {
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, searchScope]);
 
-  function runSearch(q, nextPage = 1) {
-    const cleaned = text(q);
+  function buildUrl({
+    q,
+    nextPage,
+    nextPerspectiveId,
+    nextSearchScope,
+    nextSort,
+    nextFacetFilters,
+  }) {
+    const params = new URLSearchParams();
 
-    if (!cleaned) return;
+    if (text(q)) params.set("q", text(q));
+    params.set("page", String(nextPage || 1));
+    params.set("perspectiveId", String(nextPerspectiveId || DEFAULT_PERSPECTIVE_ID));
+    params.set("searchScope", String(nextSearchScope || DEFAULT_SCOPE));
+    params.set("sort", String(nextSort || DEFAULT_SORT));
 
+    asArray(nextFacetFilters).forEach((filter) => {
+      if (text(filter)) params.append("facetFilter", text(filter));
+    });
+
+    return `/search?${params.toString()}`;
+  }
+
+  function buildApiUrl({
+    q,
+    nextPage,
+    nextPerspectiveId,
+    nextSearchScope,
+    nextSort,
+    nextFacetFilters,
+  }) {
+    const params = new URLSearchParams();
+
+    if (text(q)) params.set("q", text(q));
+    params.set("page", String(nextPage || 1));
+    params.set("limit", "20");
+    params.set("perspectiveId", String(nextPerspectiveId || DEFAULT_PERSPECTIVE_ID));
+    params.set("searchScope", String(nextSearchScope || DEFAULT_SCOPE));
+    params.set("sort", String(nextSort || DEFAULT_SORT));
+
+    asArray(nextFacetFilters).forEach((filter) => {
+      if (text(filter)) params.append("facetFilter", text(filter));
+    });
+
+    return `/api/search?${params.toString()}`;
+  }
+
+  function runSearch({
+    q = query,
+    nextPage = 1,
+    nextPerspectiveId = perspectiveId,
+    nextSearchScope = searchScope,
+    nextSort = sort,
+    nextFacetFilters = facetFilters,
+    replaceUrl = true,
+  } = {}) {
     setLoading(true);
     setError("");
     setShowSuggestions(false);
 
-    fetch(`/api/search?q=${encodeURIComponent(cleaned)}&page=${encodeURIComponent(nextPage)}&limit=20`)
+    fetch(
+      buildApiUrl({
+        q,
+        nextPage,
+        nextPerspectiveId,
+        nextSearchScope,
+        nextSort,
+        nextFacetFilters,
+      })
+    )
       .then(async (response) => {
         const json = await response.json().catch(() => null);
 
@@ -111,11 +266,20 @@ export default function SearchPage() {
       .then((json) => {
         setData(json);
 
-        router.replace(
-          `/search?q=${encodeURIComponent(cleaned)}&page=${encodeURIComponent(nextPage)}`,
-          undefined,
-          { shallow: true }
-        );
+        if (replaceUrl) {
+          router.replace(
+            buildUrl({
+              q,
+              nextPage,
+              nextPerspectiveId,
+              nextSearchScope,
+              nextSort,
+              nextFacetFilters,
+            }),
+            undefined,
+            { shallow: true }
+          );
+        }
       })
       .catch((err) => {
         setError(err.message || "Onbekende fout");
@@ -127,13 +291,61 @@ export default function SearchPage() {
 
   function submit(event) {
     event.preventDefault();
-    runSearch(query, 1);
+    runSearch({ q: query, nextPage: 1 });
+  }
+
+  function changePerspective(nextPerspectiveId) {
+    setPerspectiveId(nextPerspectiveId);
+    setFacetFilters([]);
+    runSearch({
+      q: query,
+      nextPage: 1,
+      nextPerspectiveId,
+      nextFacetFilters: [],
+    });
+  }
+
+  function changeSort(nextSort) {
+    setSort(nextSort);
+    runSearch({
+      q: query,
+      nextPage: 1,
+      nextSort,
+    });
+  }
+
+  function toggleFacet(filterValue) {
+    const value = text(filterValue);
+    if (!value) return;
+
+    const exists = facetFilters.includes(value);
+    const nextFilters = exists
+      ? facetFilters.filter((item) => item !== value)
+      : [...facetFilters, value];
+
+    setFacetFilters(nextFilters);
+
+    runSearch({
+      q: query,
+      nextPage: 1,
+      nextFacetFilters: nextFilters,
+    });
   }
 
   const mapped = data?.mapped || {};
   const raw = data?.raw || {};
   const results = asArray(mapped?.results?.result);
   const calls = asArray(raw?.debug?.calls);
+  const perspectives = asArray(raw?.perspectives);
+
+  const selectedPerspective =
+    perspectives.find((item) => String(item.id) === String(perspectiveId)) ||
+    perspectives.find((item) => String(item.id) === String(raw?.selectedPerspectiveId)) ||
+    perspectives[0];
+
+  const sortings = asArray(selectedPerspective?.sortings);
+  const searchScopes = asArray(selectedPerspective?.searchScopes);
+  const facetGroups = extractFacetGroups(raw?.searchResponse, perspectives, perspectiveId);
 
   const csvRows = useMemo(() => buildSearchMappingRows(raw, mapped), [raw, mapped]);
 
@@ -157,20 +369,21 @@ export default function SearchPage() {
     }
   }
 
+  const resultCount = text(mapped?.meta?.count?._text) || "0";
+  const hasQuery = Boolean(text(query));
+
   return (
     <div className="page">
       <div className="header-image">
         <img src="/header.JPG" alt="Header" />
       </div>
 
-      <div className="container search-page">
-        <section className="search-hero">
-          <h1 className="title">Zoeken in de collectie</h1>
-
-          <form className="search-form" onSubmit={submit}>
+      <div className="container search-page oba-search-page">
+        <section className="oba-search-top">
+          <form className="oba-search-form" onSubmit={submit}>
             <div className="search-input-wrap">
               <input
-                className="search-input"
+                className="oba-search-input"
                 value={query}
                 onChange={(event) => {
                   setQuery(event.target.value);
@@ -179,6 +392,20 @@ export default function SearchPage() {
                 onFocus={() => setShowSuggestions(true)}
                 placeholder="Waar ben je naar op zoek?"
               />
+
+              {query ? (
+                <button
+                  type="button"
+                  className="oba-search-clear"
+                  onClick={() => {
+                    setQuery("");
+                    setSuggestions([]);
+                    runSearch({ q: "", nextPage: 1 });
+                  }}
+                >
+                  ×
+                </button>
+              ) : null}
 
               {showSuggestions && suggestions.length ? (
                 <div className="suggestion-box">
@@ -190,7 +417,7 @@ export default function SearchPage() {
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => {
                         setQuery(suggestion);
-                        runSearch(suggestion, 1);
+                        runSearch({ q: suggestion, nextPage: 1 });
                       }}
                     >
                       {suggestion}
@@ -200,8 +427,8 @@ export default function SearchPage() {
               ) : null}
             </div>
 
-            <button type="submit" className="search-button">
-              Zoek
+            <button type="submit" className="oba-search-submit">
+              →
             </button>
           </form>
         </section>
@@ -209,29 +436,139 @@ export default function SearchPage() {
         {error ? <div className="search-error">Fout: {error}</div> : null}
         {loading ? <div className="search-loading">Zoeken...</div> : null}
 
-        {data ? (
-          <>
-            <section className="search-toolbar">
-              <div>
-                <strong>{text(mapped?.meta?.count?._text) || "0"}</strong> resultaten
-                {initialQuery ? ` voor "${text(mapped?.meta?.query?._text)}"` : ""}
+        <section className="oba-search-layout">
+          <aside className="oba-filter-panel">
+            <div className="filter-card filter-card-open">
+              <div className="filter-card-title">Zoeken in</div>
+
+              <div className="filter-options">
+                {perspectives.length ? (
+                  perspectives.map((perspective) => (
+                    <button
+                      key={perspective.id}
+                      type="button"
+                      className={
+                        String(perspective.id) === String(perspectiveId)
+                          ? "filter-radio active"
+                          : "filter-radio"
+                      }
+                      onClick={() => changePerspective(String(perspective.id))}
+                    >
+                      <span className="radio-dot" />
+                      <span>{perspectiveLabel(perspective)}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="filter-empty">Catalogi laden...</div>
+                )}
               </div>
+            </div>
 
-              <button type="button" className="tab-button" onClick={downloadCsv}>
-                Download mapping CSV
-              </button>
-            </section>
+            {searchScopes.length ? (
+              <div className="filter-card filter-card-open">
+                <div className="filter-card-title">Zoekveld</div>
 
-            <section className="search-layout">
-              <aside className="search-filters">
-                <h2>Verfijn</h2>
-                <p>
-                  Facetten/sortering worden hier toegevoegd zodra de OCLC-searchresponse daarvoor
-                  definitief is vastgelegd.
-                </p>
-              </aside>
+                <div className="filter-options">
+                  {searchScopes.map((scope) => (
+                    <button
+                      key={scope.id}
+                      type="button"
+                      className={
+                        String(scope.labelText) === String(searchScope)
+                          ? "filter-radio active"
+                          : "filter-radio"
+                      }
+                      onClick={() => {
+                        const nextScope = text(scope.labelText || DEFAULT_SCOPE);
+                        setSearchScope(nextScope);
+                        runSearch({
+                          q: query,
+                          nextPage: 1,
+                          nextSearchScope: nextScope,
+                        });
+                      }}
+                    >
+                      <span className="radio-dot" />
+                      <span>{text(scope.labelText || scope.labelKey)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
-              <main className="search-results">
+            {facetGroups.length ? (
+              facetGroups.map((group) => (
+                <div className="filter-card filter-card-open" key={`${group.field}-${group.label}`}>
+                  <div className="filter-card-title">{group.label}</div>
+
+                  {group.values.length ? (
+                    <div className="filter-options">
+                      {group.values.slice(0, 8).map((option) => {
+                        const checked = facetFilters.includes(option.facetFilter);
+
+                        return (
+                          <button
+                            key={`${group.field}-${option.facetFilter}-${option.label}`}
+                            type="button"
+                            className={checked ? "filter-checkbox active" : "filter-checkbox"}
+                            onClick={() => toggleFacet(option.facetFilter)}
+                          >
+                            <span className="checkbox-dot" />
+                            <span className="filter-label">{option.label}</span>
+                            {option.count !== "" ? (
+                              <span className="filter-count">{option.count}</span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="filter-empty">Geen waarden geladen</div>
+                  )}
+                </div>
+              ))
+            ) : null}
+          </aside>
+
+          <main className="oba-results-panel">
+            {hasQuery ? (
+              <div className="oba-results-heading">
+                <div>
+                  <h1>
+                    '{text(mapped?.meta?.query?._text) || query}' in{" "}
+                    {perspectiveLabel(selectedPerspective) || "OBA Collectie"}
+                  </h1>
+                  <div className="oba-result-count">{resultCount} resultaten</div>
+                </div>
+
+                <label className="oba-sort">
+                  <span>Sorteer op:</span>
+                  <select value={sort} onChange={(event) => changeSort(event.target.value)}>
+                    {sortings.length ? (
+                      sortings.map((sorting) => (
+                        <option key={sorting.id} value={sorting.id}>
+                          {sortLabel(sorting)}
+                        </option>
+                      ))
+                    ) : (
+                      <option value={DEFAULT_SORT}>relevantie</option>
+                    )}
+                  </select>
+                </label>
+              </div>
+            ) : (
+              <div className="oba-results-heading">
+                <div>
+                  <h1>Zoeken</h1>
+                  <div className="oba-result-count">
+                    Kies een catalogus of filter; resultaten verschijnen na een zoekopdracht.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {hasQuery ? (
+              <section className="oba-result-list">
                 {results.length ? (
                   results.map((result, index) => {
                     const detailId = idForDetail(result);
@@ -247,37 +584,31 @@ export default function SearchPage() {
                     const resultSubjects = subjects(result);
 
                     return (
-                      <article className="search-result-card" key={`${detailId}-${index}`}>
-                        <Link href={`/item/${encodeURIComponent(detailId)}`} className="result-cover-link">
+                      <article className="oba-result-item" key={`${detailId}-${index}`}>
+                        <Link href={`/item/${encodeURIComponent(detailId)}`} className="oba-result-cover-link">
                           {image ? (
-                            <img src={image} alt={title || "Cover"} className="result-cover" />
+                            <img src={image} alt={title || "Cover"} className="oba-result-cover" />
                           ) : (
-                            <div className="result-cover empty-cover">Geen cover</div>
+                            <div className="oba-result-cover empty-cover">Geen cover</div>
                           )}
                         </Link>
 
-                        <div className="result-body">
-                          <Link href={`/item/${encodeURIComponent(detailId)}`} className="result-title">
+                        <div className="oba-result-body">
+                          <Link href={`/item/${encodeURIComponent(detailId)}`} className="oba-result-title">
                             {title || "Onbekende titel"}
                           </Link>
 
-                          {author ? <div className="result-author">{author}</div> : null}
+                          {author ? <div className="oba-result-author">{author}</div> : null}
 
-                          <div className="result-meta-line">
-                            {[format, year].filter(Boolean).join(" · ")}
+                          {resultSubjects[0] ? (
+                            <div className="oba-result-type">{resultSubjects[0]}</div>
+                          ) : null}
+
+                          <div className="oba-result-meta">
+                            {[format, year].filter(Boolean).join(" | ")}
                           </div>
 
-                          {summary ? <p className="result-summary">{summary}</p> : null}
-
-                          {resultSubjects.length ? (
-                            <div className="result-tags">
-                              {resultSubjects.slice(0, 4).map((subject) => (
-                                <span className="result-tag" key={subject}>
-                                  {subject}
-                                </span>
-                              ))}
-                            </div>
-                          ) : null}
+                          {summary ? <p className="oba-result-summary">{summary}</p> : null}
                         </div>
                       </article>
                     );
@@ -285,71 +616,87 @@ export default function SearchPage() {
                 ) : (
                   <div className="info-card">Geen resultaten</div>
                 )}
-              </main>
-            </section>
+              </section>
+            ) : null}
 
-            <section className="pagination-row">
-              <button
-                type="button"
-                className="tab-button"
-                disabled={Number(mapped?.meta?.page?._text || 1) <= 1}
-                onClick={() => runSearch(query, Number(mapped?.meta?.page?._text || 1) - 1)}
-              >
-                vorige
-              </button>
+            {hasQuery ? (
+              <section className="pagination-row">
+                <button
+                  type="button"
+                  className="tab-button"
+                  disabled={Number(mapped?.meta?.page?._text || 1) <= 1}
+                  onClick={() =>
+                    runSearch({
+                      q: query,
+                      nextPage: Number(mapped?.meta?.page?._text || 1) - 1,
+                    })
+                  }
+                >
+                  vorige
+                </button>
 
-              <button
-                type="button"
-                className="tab-button active"
-                disabled={!results.length}
-                onClick={() => runSearch(query, Number(mapped?.meta?.page?._text || 1) + 1)}
-              >
-                volgende
-              </button>
-            </section>
+                <button
+                  type="button"
+                  className="tab-button active"
+                  disabled={!results.length}
+                  onClick={() =>
+                    runSearch({
+                      q: query,
+                      nextPage: Number(mapped?.meta?.page?._text || 1) + 1,
+                    })
+                  }
+                >
+                  volgende
+                </button>
+              </section>
+            ) : null}
+          </main>
+        </section>
 
-            <section className="debug-section">
-              <details className="debug-block">
-                <summary>OCLC API calls</summary>
-                <div className="debug-content">
-                  {calls.length ? (
-                    calls.map((call, index) => (
-                      <details className="debug-call" key={`${call?.url || "call"}-${index}`}>
-                        <summary>
-                          {call?.url || "Onbekende call"} | {call?.status || "?"}
-                        </summary>
-                        <pre>{pretty(call?.body ?? call)}</pre>
-                      </details>
-                    ))
-                  ) : (
-                    <pre>Geen calls beschikbaar</pre>
-                  )}
-                </div>
-              </details>
+        <section className="debug-section">
+          <button type="button" className="tab-button" onClick={downloadCsv}>
+            Download mapping CSV
+          </button>
 
-              <details className="debug-block">
-                <summary>Mapped output</summary>
-                <div className="debug-content">
-                  <pre>{pretty(mapped)}</pre>
-                </div>
-              </details>
+          <details className="debug-block">
+            <summary>OCLC API calls</summary>
+            <div className="debug-content">
+              {calls.length ? (
+                calls.map((call, index) => (
+                  <details className="debug-call" key={`${call?.url || "call"}-${index}`}>
+                    <summary>
+                      {call?.url || "Onbekende call"} | {call?.status || "?"}
+                    </summary>
+                    <pre>{pretty(call?.body ?? call)}</pre>
+                  </details>
+                ))
+              ) : (
+                <pre>Geen calls beschikbaar</pre>
+              )}
+            </div>
+          </details>
 
-              <details className="debug-block">
-                <summary>Raw output</summary>
-                <div className="debug-content">
-                  <pre>{pretty(raw)}</pre>
-                </div>
-              </details>
+          <details className="debug-block">
+            <summary>Mapped output</summary>
+            <div className="debug-content">
+              <pre>{pretty(mapped)}</pre>
+            </div>
+          </details>
 
-              <details className="debug-block">
-                <summary>Mapping rows</summary>
-                <div className="debug-content">
-                  <pre>{pretty(csvRows)}</pre>
-                </div>
-              </details>
-            </section>
-          </>
-        ) : null}
+          <details className="debug-block">
+            <summary>Raw output</summary>
+            <div className="debug-content">
+              <pre>{pretty(raw)}</pre>
+            </div>
+          </details>
+
+          <details className="debug-block">
+            <summary>Mapping rows</summary>
+            <div className="debug-content">
+              <pre>{pretty(csvRows)}</pre>
+            </div>
+          </details>
+        </section>
       </div>
     </div>
   );
