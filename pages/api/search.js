@@ -98,6 +98,7 @@ function extractPpn(item) {
 
   for (const candidate of candidates) {
     const value = asArray(candidate)[0];
+
     if (typeof value === "string" || typeof value === "number") {
       return text(value).replace(/^PPN:/i, "");
     }
@@ -109,6 +110,7 @@ function extractPpn(item) {
         value.id ||
         value.searchTerm ||
         value?.["_text"];
+
       if (nested) return text(nested).replace(/^PPN:/i, "");
     }
   }
@@ -157,26 +159,28 @@ function looksLikeTitle(item) {
 function normalizeSearchTitleItem(item, resolvedDetailId = "") {
   if (!item || typeof item !== "object") return null;
 
+  if (!isNumericId(resolvedDetailId)) return null;
+
   if (item.title && typeof item.title === "object") {
     return {
-      id: resolvedDetailId || extractId(item),
+      id: resolvedDetailId,
       sourceId: extractId(item),
-      resolvedDetailId: resolvedDetailId || "",
+      resolvedDetailId,
       title: {
         ...item.title,
-        id: resolvedDetailId || item.title.id || extractId(item),
+        id: resolvedDetailId,
       },
     };
   }
 
   if (looksLikeTitle(item)) {
     return {
-      id: resolvedDetailId || extractId(item),
+      id: resolvedDetailId,
       sourceId: extractId(item),
-      resolvedDetailId: resolvedDetailId || "",
+      resolvedDetailId,
       title: {
         ...item,
-        id: resolvedDetailId || item.id || extractId(item),
+        id: resolvedDetailId,
       },
     };
   }
@@ -198,9 +202,12 @@ async function resolvePpnToTitleId(ppn) {
   const cleanPpn = text(ppn).replace(/^PPN:/i, "");
   if (!cleanPpn) return { id: "", call: null };
 
-  const call = await fetchSafe(`${BASE}/titleid/ppn/${encodeURIComponent(cleanPpn)}`, discoveryHeaders);
-  const body = call.body;
+  const call = await fetchSafe(
+    `${BASE}/titleid/ppn/${encodeURIComponent(cleanPpn)}`,
+    discoveryHeaders
+  );
 
+  const body = call.body;
   let id = "";
 
   if (Array.isArray(body) && body.length) {
@@ -238,7 +245,7 @@ async function resolveItemToDetailId(item) {
   const resolved = await resolvePpnToTitleId(ppn);
 
   return {
-    detailId: resolved.id,
+    detailId: isNumericId(resolved.id) ? resolved.id : "",
     calls: resolved.call ? [resolved.call] : [],
   };
 }
@@ -287,6 +294,7 @@ export default async function handler(req, res) {
       selectedSort: "",
       selectedFacetFilters: asArray(facetFilter),
       searchResponse: null,
+      resolvedItems: [],
       debug: {
         calls: [perspectiveCall],
       },
@@ -317,6 +325,7 @@ export default async function handler(req, res) {
   const resolvedItems = await Promise.all(
     searchItems.slice(0, limitNumber).map(async (item) => {
       const resolved = await resolveItemToDetailId(item);
+
       return {
         item,
         detailId: resolved.detailId,
@@ -325,16 +334,17 @@ export default async function handler(req, res) {
     })
   );
 
-  const directTitles = resolvedItems
-    .filter((entry) => isNumericId(entry.detailId))
+  const numericResolvedItems = resolvedItems.filter((entry) => isNumericId(entry.detailId));
+
+  const directTitles = numericResolvedItems
     .map(({ item, detailId }) => normalizeSearchTitleItem(item, detailId))
     .filter(Boolean);
 
   const directTitleIds = new Set(directTitles.map((entry) => String(entry.id)));
 
-  const idsToHydrate = resolvedItems
+  const idsToHydrate = numericResolvedItems
     .map((entry) => entry.detailId)
-    .filter(Boolean)
+    .filter((id) => isNumericId(id))
     .filter((id) => !directTitleIds.has(String(id)))
     .slice(0, limitNumber);
 
@@ -354,7 +364,9 @@ export default async function handler(req, res) {
   );
 
   const hydratedTitles = titleCalls
+    .filter((entry) => isNumericId(entry.id))
     .filter((entry) => entry.title && typeof entry.title === "object")
+    .filter((entry) => entry.title.id || entry.title.title || entry.title.mainTitle)
     .map((entry) => ({
       id: entry.id,
       sourceId: entry.id,
@@ -368,9 +380,12 @@ export default async function handler(req, res) {
   const allResolvedIds = [
     ...directTitles.map((entry) => entry.id),
     ...hydratedTitles.map((entry) => entry.id),
-  ].filter(Boolean);
+  ]
+    .filter(Boolean)
+    .filter((id) => isNumericId(id));
 
-  const total = extractTotal(searchCall.body, allResolvedIds.length);
+  const totalFromOclc = extractTotal(searchCall.body, allResolvedIds.length);
+  const total = allResolvedIds.length || totalFromOclc || 0;
 
   const raw = {
     query,
@@ -390,6 +405,7 @@ export default async function handler(req, res) {
       sourceId: extractId(entry.item),
       ppn: extractPpn(entry.item),
       detailId: entry.detailId,
+      usable: isNumericId(entry.detailId),
     })),
     debug: {
       calls: [
