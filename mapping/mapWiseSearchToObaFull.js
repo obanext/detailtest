@@ -8,6 +8,10 @@ const text = (value) => {
 
 const first = (...values) => values.find((value) => text(value)) || "";
 
+function isNumericId(value) {
+  return /^\d+$/.test(text(value));
+}
+
 function splitName(value = "") {
   const source = text(value);
 
@@ -31,17 +35,13 @@ function splitName(value = "") {
   };
 }
 
-function normalizeId(value = "") {
-  return text(value).replace(/^PPN:/i, "");
+function getDetailId(entry = {}) {
+  const id = first(entry.resolvedDetailId, entry.id, entry.title?.id);
+  return isNumericId(id) ? text(id) : "";
 }
 
 function coverImage(title = {}) {
   return first(title.imageUrls?.small, title.imageUrls?.medium, title.imageUrls?.large);
-}
-
-function detailHref(title = {}, fallbackId = "") {
-  const id = first(title.id, fallbackId);
-  return `/item/${encodeURIComponent(id)}`;
 }
 
 function normalizeFormat(title = {}) {
@@ -68,8 +68,9 @@ function normalizeSubjects(title = {}) {
   return [
     ...asArray(title.subjects),
     ...asArray(title.subjectSchoolWise),
+    title.subjectPim,
   ]
-    .map((subject) => text(subject?.description))
+    .map((subject) => text(subject?.description || subject?._text || subject?.label || subject))
     .filter(Boolean)
     .map((value) => ({
       _attributes: {
@@ -83,32 +84,35 @@ function normalizeSubjects(title = {}) {
 }
 
 function normalizeResult(entry = {}) {
+  const detailId = getDetailId(entry);
+  if (!detailId) return null;
+
   const title = entry.title || {};
-  const fallbackId = entry.id || "";
-  const nativeId = normalizeId(first(title.id, fallbackId));
-  const authorName = text(title.author?.description);
+  const sourceId = text(entry.sourceId || title.frbrkey || title.id);
+  const authorName = text(title.author?.description || title.author);
   const authorParts = splitName(authorName);
   const isbn = text(asArray(title.isbn)[0]);
-  const ppn = text(asArray(title.ppn)[0]) || nativeId;
+  const ppn = text(asArray(title.ppn)[0]);
   const language = asArray(title.language)[0] || {};
-  const subjects = normalizeSubjects(title);
   const formats = normalizeFormat(title);
+  const subjects = normalizeSubjects(title);
 
   return {
     id: {
       _attributes: {
-        nativeid: nativeId,
+        nativeid: detailId,
+        sourceid: sourceId,
         ds: "library/v/OBA",
         translation: "ID",
         "search-method": "id",
-        "search-term": `|oba-catalogus|${nativeId}`,
+        "search-term": `|oba-catalogus|${detailId}`,
         "search-type": "precise",
       },
-      _text: `|oba-catalogus|${nativeId}`,
+      _text: `|oba-catalogus|${detailId}`,
     },
 
     "detail-page": {
-      _text: detailHref(title, fallbackId),
+      _text: `/item/${encodeURIComponent(detailId)}`,
     },
 
     coverimages: {
@@ -125,10 +129,10 @@ function normalizeResult(entry = {}) {
         _attributes: {
           translation: "Titel",
           "search-method": "title",
-          "search-term": text(title.title),
+          "search-term": text(title.title || title.mainTitle),
           "search-type": "fuzzy",
         },
-        _text: text(title.title),
+        _text: text(title.title || title.mainTitle),
       },
       "short-title": {
         _attributes: {
@@ -178,7 +182,7 @@ function normalizeResult(entry = {}) {
             year: text(title.publicationYear),
             place: "",
           },
-          _text: first(title.publisher, title.publicationDetails),
+          _text: first(title.publisher, title.publicationDetails, title.imprint),
         },
       },
     },
@@ -192,7 +196,7 @@ function normalizeResult(entry = {}) {
           "search-type": "searcher",
           raw: text(language.code).toLowerCase(),
         },
-        _text: text(language.description),
+        _text: text(language.description || language),
       },
     },
 
@@ -216,7 +220,7 @@ function normalizeResult(entry = {}) {
         _attributes: {
           translation: "Samenvatting",
         },
-        _text: first(title.contents, title.contentsSchoolWise),
+        _text: first(title.contents, title.contentsSchoolWise, title.summary),
       },
     },
 
@@ -266,12 +270,12 @@ function normalizeResult(entry = {}) {
 
     "undup-info": {
       _attributes: {
-        key: `|oba-catalogus|${nativeId}`,
+        key: `|oba-catalogus|${detailId}`,
         cnt: "",
         sort: "year",
-        frabl: "",
+        frabl: sourceId,
         "frabl-global-count": "",
-        "frabl-key1": text(title.title),
+        "frabl-key1": text(title.title || title.mainTitle),
         "frabl-key2": authorName,
         translation: "Informatie over dubbele items",
         "undup-all-search": "",
@@ -283,8 +287,11 @@ function normalizeResult(entry = {}) {
 }
 
 export function mapWiseSearchToObaFull(raw = {}) {
-  const titles = asArray(raw.titles).filter((entry) => entry?.title && typeof entry.title === "object");
-  const results = titles.map(normalizeResult);
+  const titles = asArray(raw.titles).filter(
+    (entry) => entry?.title && typeof entry.title === "object" && isNumericId(getDetailId(entry))
+  );
+
+  const results = titles.map(normalizeResult).filter(Boolean);
 
   return {
     _attributes: {
