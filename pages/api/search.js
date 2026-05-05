@@ -36,6 +36,12 @@ async function fetchSafe(url, headers = searchHeaders) {
 
 const asArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 
+const text = (value) => {
+  if (typeof value === "string") return value.trim();
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
 function extractPerspectives(body) {
   return asArray(body?.perspective);
 }
@@ -74,6 +80,51 @@ function extractId(item) {
   );
 }
 
+function extractPpn(item) {
+  if (!item || typeof item !== "object") return "";
+
+  const candidates = [
+    item.ppn,
+    item.ppnId,
+    item.ppnNumber,
+    item?.title?.ppn,
+    item?.title?.ppnId,
+    item?.identifiers?.ppn,
+    item?.identifiers?.["ppn-id"],
+    item?.identifier?.ppn,
+    item?.record?.ppn,
+    item?.document?.ppn,
+  ];
+
+  for (const candidate of candidates) {
+    const value = asArray(candidate)[0];
+    if (typeof value === "string" || typeof value === "number") {
+      return text(value).replace(/^PPN:/i, "");
+    }
+
+    if (value && typeof value === "object") {
+      const nested =
+        value._text ||
+        value.value ||
+        value.id ||
+        value.searchTerm ||
+        value?.["_text"];
+      if (nested) return text(nested).replace(/^PPN:/i, "");
+    }
+  }
+
+  const id = text(extractId(item));
+  if (id.toUpperCase().startsWith("PPN:")) {
+    return id.replace(/^PPN:/i, "");
+  }
+
+  return "";
+}
+
+function isNumericId(value) {
+  return /^\d+$/.test(text(value));
+}
+
 function extractTotal(body, fallback) {
   if (!body || typeof body !== "object") return fallback;
 
@@ -103,20 +154,30 @@ function looksLikeTitle(item) {
   );
 }
 
-function normalizeSearchTitleItem(item) {
+function normalizeSearchTitleItem(item, resolvedDetailId = "") {
   if (!item || typeof item !== "object") return null;
 
   if (item.title && typeof item.title === "object") {
     return {
-      id: extractId(item),
-      title: item.title,
+      id: resolvedDetailId || extractId(item),
+      sourceId: extractId(item),
+      resolvedDetailId: resolvedDetailId || "",
+      title: {
+        ...item.title,
+        id: resolvedDetailId || item.title.id || extractId(item),
+      },
     };
   }
 
   if (looksLikeTitle(item)) {
     return {
-      id: extractId(item),
-      title: item,
+      id: resolvedDetailId || extractId(item),
+      sourceId: extractId(item),
+      resolvedDetailId: resolvedDetailId || "",
+      title: {
+        ...item,
+        id: resolvedDetailId || item.id || extractId(item),
+      },
     };
   }
 
@@ -131,6 +192,55 @@ function appendParam(url, key, value) {
 
 function appendRepeatedParam(url, key, values) {
   return asArray(values).reduce((nextUrl, value) => appendParam(nextUrl, key, value), url);
+}
+
+async function resolvePpnToTitleId(ppn) {
+  const cleanPpn = text(ppn).replace(/^PPN:/i, "");
+  if (!cleanPpn) return { id: "", call: null };
+
+  const call = await fetchSafe(`${BASE}/titleid/ppn/${encodeURIComponent(cleanPpn)}`, discoveryHeaders);
+  const body = call.body;
+
+  let id = "";
+
+  if (Array.isArray(body) && body.length) {
+    id =
+      body[0]?.bibliographicRecordId ||
+      body[0]?.id ||
+      body[0]?.titleId ||
+      body[0]?.recordId ||
+      "";
+  } else if (body && typeof body === "object") {
+    id =
+      body.bibliographicRecordId ||
+      body.id ||
+      body.titleId ||
+      body.recordId ||
+      "";
+  }
+
+  return { id: text(id), call };
+}
+
+async function resolveItemToDetailId(item) {
+  const rawId = text(extractId(item));
+
+  if (isNumericId(rawId)) {
+    return { detailId: rawId, calls: [] };
+  }
+
+  const ppn = extractPpn(item);
+
+  if (!ppn) {
+    return { detailId: "", calls: [] };
+  }
+
+  const resolved = await resolvePpnToTitleId(ppn);
+
+  return {
+    detailId: resolved.id,
+    calls: resolved.call ? [resolved.call] : [],
+  };
 }
 
 export default async function handler(req, res) {
@@ -203,13 +313,26 @@ export default async function handler(req, res) {
 
   const searchCall = await fetchSafe(titleSummaryUrl, searchHeaders);
   const searchItems = extractSearchItems(searchCall.body);
-  const total = extractTotal(searchCall.body, searchItems.length);
 
-  const directTitles = searchItems.map(normalizeSearchTitleItem).filter(Boolean);
+  const resolvedItems = await Promise.all(
+    searchItems.slice(0, limitNumber).map(async (item) => {
+      const resolved = await resolveItemToDetailId(item);
+      return {
+        item,
+        detailId: resolved.detailId,
+        resolveCalls: resolved.calls,
+      };
+    })
+  );
+
+  const directTitles = resolvedItems
+    .map(({ item, detailId }) => normalizeSearchTitleItem(item, detailId))
+    .filter(Boolean);
+
   const directTitleIds = new Set(directTitles.map((entry) => String(entry.id)));
 
-  const idsToHydrate = searchItems
-    .map(extractId)
+  const idsToHydrate = resolvedItems
+    .map((entry) => entry.detailId)
     .filter(Boolean)
     .filter((id) => !directTitleIds.has(String(id)))
     .slice(0, limitNumber);
@@ -233,15 +356,27 @@ export default async function handler(req, res) {
     .filter((entry) => entry.title && typeof entry.title === "object")
     .map((entry) => ({
       id: entry.id,
-      title: entry.title,
+      sourceId: entry.id,
+      resolvedDetailId: entry.id,
+      title: {
+        ...entry.title,
+        id: entry.id,
+      },
     }));
+
+  const allResolvedIds = [
+    ...directTitles.map((entry) => entry.id),
+    ...hydratedTitles.map((entry) => entry.id),
+  ].filter(Boolean);
+
+  const total = extractTotal(searchCall.body, allResolvedIds.length);
 
   const raw = {
     query,
     page: pageNumber,
     limit: limitNumber,
     total,
-    ids: [...directTitles.map((entry) => entry.id), ...idsToHydrate],
+    ids: allResolvedIds,
     titles: [...directTitles, ...hydratedTitles],
     suggestions: [],
     perspectives,
@@ -250,10 +385,16 @@ export default async function handler(req, res) {
     selectedSort: "",
     selectedFacetFilters: asArray(facetFilter),
     searchResponse: searchCall.body,
+    resolvedItems: resolvedItems.map((entry) => ({
+      sourceId: extractId(entry.item),
+      ppn: extractPpn(entry.item),
+      detailId: entry.detailId,
+    })),
     debug: {
       calls: [
         perspectiveCall,
         searchCall,
+        ...resolvedItems.flatMap((entry) => entry.resolveCalls),
         ...titleCalls.map((entry) => entry.call),
       ],
     },
