@@ -4,7 +4,6 @@ const BASE = "https://bibliotheek-accept1.wise.oclc.org/restapi";
 const BRANCH_ID = "1000";
 const DEFAULT_PERSPECTIVE_ID = "3687";
 const DEFAULT_SCOPE = "anything";
-const DEFAULT_SORT = "2910";
 
 const searchHeaders = {
   Accept: "application/json",
@@ -36,20 +35,6 @@ async function fetchSafe(url, headers = searchHeaders) {
 }
 
 const asArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
-
-function extractSuggestions(body) {
-  if (!body) return [];
-  if (Array.isArray(body)) return body;
-
-  return (
-    body.suggestions ||
-    body.items ||
-    body.results ||
-    body.searchSuggestions ||
-    body.titleSuggestions ||
-    []
-  );
-}
 
 function extractPerspectives(body) {
   return asArray(body?.perspective);
@@ -156,7 +141,6 @@ export default async function handler(req, res) {
     suggest = "",
     perspectiveId = DEFAULT_PERSPECTIVE_ID,
     searchScope = DEFAULT_SCOPE,
-    sort = DEFAULT_SORT,
     facetFilter = [],
     filterAvailableTitles = "false",
   } = req.query;
@@ -164,26 +148,9 @@ export default async function handler(req, res) {
   const query = String(q || "").trim();
 
   if (suggest === "1") {
-    if (query.length < 2) {
-      return res.status(200).json({
-        suggestions: [],
-        debug: { calls: [] },
-      });
-    }
-
-    const suggestionUrl =
-      `${BASE}/branch/${BRANCH_ID}/searchsuggestion` +
-      `?term=${encodeURIComponent(query)}` +
-      `&searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}` +
-      `&clientType=default`;
-
-    const suggestion = await fetchSafe(suggestionUrl, searchHeaders);
-
     return res.status(200).json({
-      suggestions: extractSuggestions(suggestion.body),
-      debug: {
-        calls: [suggestion],
-      },
+      suggestions: [],
+      debug: { calls: [] },
     });
   }
 
@@ -207,7 +174,7 @@ export default async function handler(req, res) {
       perspectives,
       selectedPerspectiveId: String(perspectiveId || DEFAULT_PERSPECTIVE_ID),
       selectedSearchScope: String(searchScope || DEFAULT_SCOPE),
-      selectedSort: String(sort || DEFAULT_SORT),
+      selectedSort: "",
       selectedFacetFilters: asArray(facetFilter),
       searchResponse: null,
       debug: {
@@ -231,10 +198,6 @@ export default async function handler(req, res) {
     `&searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}` +
     `&filterAvailableTitles=${encodeURIComponent(filterAvailableTitles)}` +
     `&enableMultiSelectFaceting=true`;
-
-  if (sort) {
-    titleSummaryUrl = appendParam(titleSummaryUrl, "sort", sort);
-  }
 
   titleSummaryUrl = appendRepeatedParam(titleSummaryUrl, "facetFilter", facetFilter);
 
@@ -273,14 +236,6 @@ export default async function handler(req, res) {
       title: entry.title,
     }));
 
-  const suggestionUrl =
-    `${BASE}/branch/${BRANCH_ID}/searchsuggestion` +
-    `?term=${encodeURIComponent(query)}` +
-    `&searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}` +
-    `&clientType=default`;
-
-  const suggestion = await fetchSafe(suggestionUrl, searchHeaders);
-
   const raw = {
     query,
     page: pageNumber,
@@ -288,11 +243,11 @@ export default async function handler(req, res) {
     total,
     ids: [...directTitles.map((entry) => entry.id), ...idsToHydrate],
     titles: [...directTitles, ...hydratedTitles],
-    suggestions: extractSuggestions(suggestion.body),
+    suggestions: [],
     perspectives,
     selectedPerspectiveId: String(perspectiveId || DEFAULT_PERSPECTIVE_ID),
     selectedSearchScope: String(searchScope || DEFAULT_SCOPE),
-    selectedSort: String(sort || DEFAULT_SORT),
+    selectedSort: "",
     selectedFacetFilters: asArray(facetFilter),
     searchResponse: searchCall.body,
     debug: {
@@ -300,7 +255,6 @@ export default async function handler(req, res) {
         perspectiveCall,
         searchCall,
         ...titleCalls.map((entry) => entry.call),
-        suggestion,
       ],
     },
   };
