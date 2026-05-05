@@ -344,8 +344,7 @@ export default function SearchPage() {
 
   const mapped = data?.mapped || {};
   const raw = data?.raw || {};
-  const results = asArray(mapped?.results?.result);
-  const renderableResults = results.filter((result) => isNumericId(idForDetail(result)));
+  const results = asArray(mapped?.results?.result).filter((result) => isNumericId(idForDetail(result)));
   const calls = asArray(raw?.debug?.calls);
   const perspectives = asArray(raw?.perspectives);
 
@@ -380,7 +379,7 @@ export default function SearchPage() {
     }
   }
 
-  const resultCount = String(renderableResults.length || 0);
+  const resultCount = text(mapped?.meta?.count?._text) || "0";
   const hasQuery = Boolean(text(query));
 
   return (
@@ -580,8 +579,8 @@ export default function SearchPage() {
 
             {hasQuery ? (
               <section className="oba-result-list">
-                {renderableResults.length ? (
-                  renderableResults.map((result, index) => {
+                {results.length ? (
+                  results.map((result, index) => {
                     const detailId = idForDetail(result);
                     const title = resultTitle(result);
                     const image = coverImage(result);
@@ -596,10 +595,7 @@ export default function SearchPage() {
 
                     return (
                       <article className="oba-result-item" key={`${detailId}-${index}`}>
-                        <Link
-                          href={`/item/${encodeURIComponent(detailId)}`}
-                          className="oba-result-cover-link"
-                        >
+                        <Link href={`/item/${encodeURIComponent(detailId)}`} className="oba-result-cover-link">
                           {image ? (
                             <img src={image} alt={title || "Cover"} className="oba-result-cover" />
                           ) : (
@@ -608,10 +604,7 @@ export default function SearchPage() {
                         </Link>
 
                         <div className="oba-result-body">
-                          <Link
-                            href={`/item/${encodeURIComponent(detailId)}`}
-                            className="oba-result-title"
-                          >
+                          <Link href={`/item/${encodeURIComponent(detailId)}`} className="oba-result-title">
                             {title || "Onbekende titel"}
                           </Link>
 
@@ -631,9 +624,7 @@ export default function SearchPage() {
                     );
                   })
                 ) : (
-                  <div className="info-card">
-                    Geen resultaten met een geldige numerieke detail-id.
-                  </div>
+                  <div className="info-card">Geen resultaten met een geldig detail-id</div>
                 )}
               </section>
             ) : null}
@@ -657,7 +648,7 @@ export default function SearchPage() {
                 <button
                   type="button"
                   className="tab-button active"
-                  disabled={!renderableResults.length}
+                  disabled={!results.length}
                   onClick={() =>
                     runSearch({
                       q: query,
