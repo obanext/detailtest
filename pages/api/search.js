@@ -326,6 +326,7 @@ export default async function handler(req, res) {
   );
 
   const directTitles = resolvedItems
+    .filter((entry) => isNumericId(entry.detailId))
     .map(({ item, detailId }) => normalizeSearchTitleItem(item, detailId))
     .filter(Boolean);
 
