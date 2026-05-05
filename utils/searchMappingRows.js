@@ -8,6 +8,10 @@ const text = (value) => {
 
 const first = (...values) => values.find((value) => text(value)) || "";
 
+function isNumericId(value) {
+  return /^\d+$/.test(text(value));
+}
+
 function splitName(value = "") {
   const source = text(value);
 
@@ -40,16 +44,13 @@ function coverImage(title = {}) {
 }
 
 function getDetailId(entry = {}) {
-  return first(
-    entry.resolvedDetailId,
-    entry.id,
-    entry.title?.id
-  );
+  const id = first(entry.resolvedDetailId, entry.id, entry.title?.id);
+  return isNumericId(id) ? text(id) : "";
 }
 
 function detailHref(entry = {}) {
   const id = getDetailId(entry);
-  return `/item/${encodeURIComponent(id)}`;
+  return id ? `/item/${encodeURIComponent(id)}` : "";
 }
 
 function normalizeFormat(title = {}) {
@@ -73,10 +74,7 @@ function normalizeFormat(title = {}) {
 }
 
 function normalizeSubjects(title = {}) {
-  return [
-    ...asArray(title.subjects),
-    ...asArray(title.subjectSchoolWise),
-  ]
+  return [...asArray(title.subjects), ...asArray(title.subjectSchoolWise)]
     .map((subject) => text(subject?.description || subject?._text || subject?.label || subject))
     .filter(Boolean)
     .map((value) => ({
@@ -91,14 +89,17 @@ function normalizeSubjects(title = {}) {
 }
 
 function normalizeResult(entry = {}) {
-  const title = entry.title || {};
   const detailId = getDetailId(entry);
+
+  if (!detailId) return null;
+
+  const title = entry.title || {};
   const nativeId = normalizeId(detailId);
   const sourceId = normalizeId(first(entry.sourceId, title.sourceId, title.ppn?.[0], title.ppn));
   const authorName = text(title.author?.description || title.author);
   const authorParts = splitName(authorName);
   const isbn = text(asArray(title.isbn)[0]);
-  const ppn = text(asArray(title.ppn)[0]) || sourceId || nativeId;
+  const ppn = text(asArray(title.ppn)[0]) || sourceId;
   const language = asArray(title.language)[0] || {};
   const subjects = normalizeSubjects(title);
   const formats = normalizeFormat(title);
@@ -293,8 +294,11 @@ function normalizeResult(entry = {}) {
 }
 
 export function mapWiseSearchToObaFull(raw = {}) {
-  const titles = asArray(raw.titles).filter((entry) => entry?.title && typeof entry.title === "object");
-  const results = titles.map(normalizeResult);
+  const titles = asArray(raw.titles).filter(
+    (entry) => entry?.title && typeof entry.title === "object" && isNumericId(getDetailId(entry))
+  );
+
+  const results = titles.map(normalizeResult).filter(Boolean);
 
   return {
     _attributes: {
@@ -305,7 +309,7 @@ export function mapWiseSearchToObaFull(raw = {}) {
 
     meta: {
       count: {
-        _text: String(raw.total || results.length || 0),
+        _text: String(results.length),
       },
       page: {
         _text: String(raw.page || 1),
