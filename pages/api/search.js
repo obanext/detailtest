@@ -1,52 +1,82 @@
 import { mapWiseSearchToObaFull } from "../../mapping/mapWiseSearchToObaFull";
 
 const BASE = "https://bibliotheek-accept1.wise.oclc.org/restapi";
+const BRANCH_ID = "1000";
+const DEFAULT_PERSPECTIVE_ID = "3687";
+const DEFAULT_SCOPE = "anything";
+const DEFAULT_SORT = "2910";
 
-const headers = {
+const searchHeaders = {
+  Accept: "application/json",
+  wise_key: process.env.WISE_SEARCH_KEY,
+};
+
+const discoveryHeaders = {
   Accept: "application/json",
   application: process.env.APPLICATION,
   WISE_KEY: process.env.WISE_KEY,
 };
 
-async function fetchSafe(url) {
+async function fetchSafe(url, headers = searchHeaders) {
   try {
     const res = await fetch(url, { headers });
     const body = await res.json().catch(() => null);
-    return { url, status: res.status, body };
-  } catch {
-    return { url, status: 500, body: null };
+    return { url, status: res.status, ok: res.ok, body };
+  } catch (error) {
+    return { url, status: 500, ok: false, body: null, error: error.message };
   }
 }
 
 const asArray = (value) => (Array.isArray(value) ? value : value ? [value] : []);
 
-function extractIds(body) {
+function extractSuggestions(body) {
   if (!body) return [];
+  if (Array.isArray(body)) return body;
 
-  if (Array.isArray(body)) {
-    return body
-      .map((item) => {
-        if (typeof item === "string" || typeof item === "number") return String(item);
-        return item?.id || item?.titleId || item?.bibliographicRecordId || item?.recordId;
-      })
-      .filter(Boolean);
-  }
-
-  const candidates =
+  return (
+    body.suggestions ||
     body.items ||
     body.results ||
+    body.searchSuggestions ||
+    body.titleSuggestions ||
+    []
+  );
+}
+
+function extractPerspectives(body) {
+  return asArray(body?.perspective);
+}
+
+function extractSearchItems(body) {
+  if (!body) return [];
+
+  const candidates =
     body.titles ||
-    body.titleIds ||
-    body.bibliographicRecordIds ||
+    body.title ||
+    body.items ||
+    body.results ||
+    body.result ||
     body.content ||
+    body.documents ||
     [];
 
-  return asArray(candidates)
-    .map((item) => {
-      if (typeof item === "string" || typeof item === "number") return String(item);
-      return item?.id || item?.titleId || item?.bibliographicRecordId || item?.recordId;
-    })
-    .filter(Boolean);
+  return asArray(candidates);
+}
+
+function extractId(item) {
+  if (!item) return "";
+
+  if (typeof item === "string" || typeof item === "number") return String(item);
+
+  return (
+    item.id ||
+    item.titleId ||
+    item.bibliographicRecordId ||
+    item.recordId ||
+    item?.title?.id ||
+    item?.document?.id ||
+    ""
+  );
 }
 
 function extractTotal(body, fallback) {
@@ -58,27 +88,68 @@ function extractTotal(body, fallback) {
     body.count ||
     body.numFound ||
     body.totalResults ||
+    body.numberOfResults ||
+    body.resultCount ||
     fallback
   );
 }
 
-function extractSuggestions(body) {
-  if (!body) return [];
+function looksLikeTitle(item) {
+  if (!item || typeof item !== "object") return false;
 
-  if (Array.isArray(body)) return body;
-
-  return (
-    body.suggestions ||
-    body.spellcheck?.suggestions ||
-    body.spellcheck ||
-    body.items ||
-    body.results ||
-    []
+  return Boolean(
+    item.title ||
+      item.mainTitle ||
+      item.author ||
+      item.imageUrls ||
+      item.publicationYear ||
+      item.isbn ||
+      item.ppn
   );
 }
 
+function normalizeSearchTitleItem(item) {
+  if (!item || typeof item !== "object") return null;
+
+  if (item.title && typeof item.title === "object") {
+    return {
+      id: extractId(item),
+      title: item.title,
+    };
+  }
+
+  if (looksLikeTitle(item)) {
+    return {
+      id: extractId(item),
+      title: item,
+    };
+  }
+
+  return null;
+}
+
+function appendParam(url, key, value) {
+  if (value === undefined || value === null || value === "") return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+}
+
+function appendRepeatedParam(url, key, values) {
+  return asArray(values).reduce((nextUrl, value) => appendParam(nextUrl, key, value), url);
+}
+
 export default async function handler(req, res) {
-  const { q = "", page = "1", limit = "20", suggest = "" } = req.query;
+  const {
+    q = "",
+    page = "1",
+    limit = "20",
+    suggest = "",
+    perspectiveId = DEFAULT_PERSPECTIVE_ID,
+    searchScope = DEFAULT_SCOPE,
+    sort = DEFAULT_SORT,
+    facetFilter = [],
+    filterAvailableTitles = "false",
+  } = req.query;
 
   const query = String(q || "").trim();
 
@@ -90,28 +161,47 @@ export default async function handler(req, res) {
       });
     }
 
-    const spell = await fetchSafe(
-      `${BASE}/title/catalog/NBC_PLUS/spellcheck?q=${encodeURIComponent(query)}&qt=/spell&scope=ALL`
-    );
+    const suggestionUrl =
+      `${BASE}/branch/${BRANCH_ID}/searchsuggestion` +
+      `?term=${encodeURIComponent(query)}` +
+      `&searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}`;
+
+    const suggestion = await fetchSafe(suggestionUrl, searchHeaders);
 
     return res.status(200).json({
-      suggestions: extractSuggestions(spell.body),
+      suggestions: extractSuggestions(suggestion.body),
       debug: {
-        calls: [spell],
+        calls: [suggestion],
       },
     });
   }
 
+  const pageNumber = Math.max(Number(page) || 1, 1);
+  const limitNumber = Math.max(Math.min(Number(limit) || 20, 50), 1);
+  const offset = (pageNumber - 1) * limitNumber;
+
+  const perspectiveUrl = `${BASE}/branch/${BRANCH_ID}/clienttype/default/perspective`;
+  const perspectiveCall = await fetchSafe(perspectiveUrl, searchHeaders);
+  const perspectives = extractPerspectives(perspectiveCall.body);
+
   if (!query) {
     const raw = {
       query,
-      page: Number(page) || 1,
-      limit: Number(limit) || 20,
+      page: pageNumber,
+      limit: limitNumber,
       total: 0,
       ids: [],
       titles: [],
       suggestions: [],
-      debug: { calls: [] },
+      perspectives,
+      selectedPerspectiveId: String(perspectiveId || DEFAULT_PERSPECTIVE_ID),
+      selectedSearchScope: String(searchScope || DEFAULT_SCOPE),
+      selectedSort: String(sort || DEFAULT_SORT),
+      selectedFacetFilters: asArray(facetFilter),
+      searchResponse: null,
+      debug: {
+        calls: [perspectiveCall],
+      },
     };
 
     const mapped = mapWiseSearchToObaFull(raw);
@@ -119,20 +209,41 @@ export default async function handler(req, res) {
     return res.status(200).json({ raw, mapped });
   }
 
-  const pageNumber = Math.max(Number(page) || 1, 1);
-  const limitNumber = Math.max(Math.min(Number(limit) || 20, 50), 1);
-  const offset = (pageNumber - 1) * limitNumber;
+  let searchUrl =
+    `${BASE}/branch/${BRANCH_ID}/perspective/${encodeURIComponent(perspectiveId || DEFAULT_PERSPECTIVE_ID)}/search` +
+    `?searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}` +
+    `&term=${encodeURIComponent(query)}` +
+    `&offset=${offset}` +
+    `&limit=${limitNumber}` +
+    `&returnType=default` +
+    `&filterAvailableTitles=${encodeURIComponent(filterAvailableTitles)}` +
+    `&enableMultiSelectFaceting=true`;
 
-  const titleList = await fetchSafe(
-    `${BASE}/titlelist?searchTerm=${encodeURIComponent(query)}&offset=${offset}&limit=${limitNumber}&branchIds=1000`
-  );
+  if (sort) {
+    searchUrl = appendParam(searchUrl, "sort", sort);
+  }
 
-  const ids = extractIds(titleList.body);
-  const total = extractTotal(titleList.body, ids.length);
+  searchUrl = appendRepeatedParam(searchUrl, "facetFilter", facetFilter);
+
+  const searchCall = await fetchSafe(searchUrl, searchHeaders);
+  const searchItems = extractSearchItems(searchCall.body);
+  const total = extractTotal(searchCall.body, searchItems.length);
+
+  const directTitles = searchItems.map(normalizeSearchTitleItem).filter(Boolean);
+  const directTitleIds = new Set(directTitles.map((entry) => String(entry.id)));
+
+  const idsToHydrate = searchItems
+    .map(extractId)
+    .filter(Boolean)
+    .filter((id) => !directTitleIds.has(String(id)))
+    .slice(0, limitNumber);
 
   const titleCalls = await Promise.all(
-    ids.slice(0, limitNumber).map(async (id) => {
-      const call = await fetchSafe(`${BASE}/discovery/title/${encodeURIComponent(id)}`);
+    idsToHydrate.map(async (id) => {
+      const call = await fetchSafe(
+        `${BASE}/discovery/title/${encodeURIComponent(id)}`,
+        discoveryHeaders
+      );
 
       return {
         id,
@@ -142,30 +253,40 @@ export default async function handler(req, res) {
     })
   );
 
-  const validTitles = titleCalls
+  const hydratedTitles = titleCalls
     .filter((entry) => entry.title && typeof entry.title === "object")
     .map((entry) => ({
       id: entry.id,
       title: entry.title,
     }));
 
-  const spell = await fetchSafe(
-    `${BASE}/title/catalog/NBC_PLUS/spellcheck?q=${encodeURIComponent(query)}&qt=/spell&scope=ALL`
-  );
+  const suggestionUrl =
+    `${BASE}/branch/${BRANCH_ID}/searchsuggestion` +
+    `?term=${encodeURIComponent(query)}` +
+    `&searchScope=${encodeURIComponent(searchScope || DEFAULT_SCOPE)}`;
+
+  const suggestion = await fetchSafe(suggestionUrl, searchHeaders);
 
   const raw = {
     query,
     page: pageNumber,
     limit: limitNumber,
     total,
-    ids,
-    titles: validTitles,
-    suggestions: extractSuggestions(spell.body),
+    ids: [...directTitles.map((entry) => entry.id), ...idsToHydrate],
+    titles: [...directTitles, ...hydratedTitles],
+    suggestions: extractSuggestions(suggestion.body),
+    perspectives,
+    selectedPerspectiveId: String(perspectiveId || DEFAULT_PERSPECTIVE_ID),
+    selectedSearchScope: String(searchScope || DEFAULT_SCOPE),
+    selectedSort: String(sort || DEFAULT_SORT),
+    selectedFacetFilters: asArray(facetFilter),
+    searchResponse: searchCall.body,
     debug: {
       calls: [
-        titleList,
+        perspectiveCall,
+        searchCall,
         ...titleCalls.map((entry) => entry.call),
-        spell,
+        suggestion,
       ],
     },
   };
