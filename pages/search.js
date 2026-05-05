@@ -25,6 +25,10 @@ const DEFAULT_PERSPECTIVE_ID = "3687";
 const DEFAULT_SCOPE = "anything";
 const DEFAULT_SORT = "2910";
 
+function isNumericId(value) {
+  return /^\d+$/.test(text(value));
+}
+
 function idForDetail(result = {}) {
   const detailPage = text(result?.["detail-page"]?._text);
 
@@ -134,8 +138,12 @@ export default function SearchPage() {
     if (!router.isReady) return;
 
     const q = typeof router.query.q === "string" ? router.query.q : "";
-    const p = typeof router.query.perspectiveId === "string" ? router.query.perspectiveId : DEFAULT_PERSPECTIVE_ID;
-    const scope = typeof router.query.searchScope === "string" ? router.query.searchScope : DEFAULT_SCOPE;
+    const p =
+      typeof router.query.perspectiveId === "string"
+        ? router.query.perspectiveId
+        : DEFAULT_PERSPECTIVE_ID;
+    const scope =
+      typeof router.query.searchScope === "string" ? router.query.searchScope : DEFAULT_SCOPE;
     const sortValue = typeof router.query.sort === "string" ? router.query.sort : DEFAULT_SORT;
     const filters = asArray(router.query.facetFilter).map(text).filter(Boolean);
 
@@ -297,6 +305,7 @@ export default function SearchPage() {
   function changePerspective(nextPerspectiveId) {
     setPerspectiveId(nextPerspectiveId);
     setFacetFilters([]);
+
     runSearch({
       q: query,
       nextPage: 1,
@@ -307,6 +316,7 @@ export default function SearchPage() {
 
   function changeSort(nextSort) {
     setSort(nextSort);
+
     runSearch({
       q: query,
       nextPage: 1,
@@ -335,6 +345,7 @@ export default function SearchPage() {
   const mapped = data?.mapped || {};
   const raw = data?.raw || {};
   const results = asArray(mapped?.results?.result);
+  const renderableResults = results.filter((result) => isNumericId(idForDetail(result)));
   const calls = asArray(raw?.debug?.calls);
   const perspectives = asArray(raw?.perspectives);
 
@@ -369,7 +380,7 @@ export default function SearchPage() {
     }
   }
 
-  const resultCount = text(mapped?.meta?.count?._text) || "0";
+  const resultCount = String(renderableResults.length || 0);
   const hasQuery = Boolean(text(query));
 
   return (
@@ -569,8 +580,8 @@ export default function SearchPage() {
 
             {hasQuery ? (
               <section className="oba-result-list">
-                {results.length ? (
-                  results.map((result, index) => {
+                {renderableResults.length ? (
+                  renderableResults.map((result, index) => {
                     const detailId = idForDetail(result);
                     const title = resultTitle(result);
                     const image = coverImage(result);
@@ -585,7 +596,10 @@ export default function SearchPage() {
 
                     return (
                       <article className="oba-result-item" key={`${detailId}-${index}`}>
-                        <Link href={`/item/${encodeURIComponent(detailId)}`} className="oba-result-cover-link">
+                        <Link
+                          href={`/item/${encodeURIComponent(detailId)}`}
+                          className="oba-result-cover-link"
+                        >
                           {image ? (
                             <img src={image} alt={title || "Cover"} className="oba-result-cover" />
                           ) : (
@@ -594,7 +608,10 @@ export default function SearchPage() {
                         </Link>
 
                         <div className="oba-result-body">
-                          <Link href={`/item/${encodeURIComponent(detailId)}`} className="oba-result-title">
+                          <Link
+                            href={`/item/${encodeURIComponent(detailId)}`}
+                            className="oba-result-title"
+                          >
                             {title || "Onbekende titel"}
                           </Link>
 
@@ -614,7 +631,9 @@ export default function SearchPage() {
                     );
                   })
                 ) : (
-                  <div className="info-card">Geen resultaten</div>
+                  <div className="info-card">
+                    Geen resultaten met een geldige numerieke detail-id.
+                  </div>
                 )}
               </section>
             ) : null}
@@ -638,7 +657,7 @@ export default function SearchPage() {
                 <button
                   type="button"
                   className="tab-button active"
-                  disabled={!results.length}
+                  disabled={!renderableResults.length}
                   onClick={() =>
                     runSearch({
                       q: query,
