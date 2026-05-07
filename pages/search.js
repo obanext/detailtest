@@ -389,6 +389,12 @@ export default function SearchPage() {
       </div>
 
       <div className="container search-page oba-search-page">
+        <nav className="oba-breadcrumbs" aria-label="Broodkruimelpad">
+          <button type="button" className="oba-chip" onClick={() => router.back()}>← Terug</button>
+          <span className="oba-chip oba-chip-dark">⌂</span>
+          <span className="oba-chip">Zoeken</span>
+        </nav>
+
         <section className="oba-search-top">
           <form className="oba-search-form" onSubmit={submit}>
             <div className="search-input-wrap">
@@ -400,7 +406,7 @@ export default function SearchPage() {
                   setShowSuggestions(true);
                 }}
                 onFocus={() => setShowSuggestions(true)}
-                placeholder="Waar ben je naar op zoek?"
+                placeholder="Waar ben je naar op zoek?" aria-label="Zoeken"
               />
 
               {query ? (
@@ -437,7 +443,7 @@ export default function SearchPage() {
               ) : null}
             </div>
 
-            <button type="submit" className="oba-search-submit">
+            <button type="submit" className="oba-search-submit" aria-label="Zoeken">
               →
             </button>
           </form>
@@ -552,7 +558,7 @@ export default function SearchPage() {
                 </div>
 
                 <label className="oba-sort">
-                  <span>Sorteer op:</span>
+                  <span>Sorteren op:</span>
                   <select value={sort} onChange={(event) => changeSort(event.target.value)}>
                     {sortings.length ? (
                       sortings.map((sorting) => (
@@ -610,12 +616,10 @@ export default function SearchPage() {
 
                           {author ? <div className="oba-result-author">{author}</div> : null}
 
-                          {resultSubjects[0] ? (
-                            <div className="oba-result-type">{resultSubjects[0]}</div>
-                          ) : null}
+                          {format ? <div className="oba-result-type">{format}</div> : null}
 
                           <div className="oba-result-meta">
-                            {[format, year].filter(Boolean).join(" | ")}
+                            {[text(result?.languages?.language?._text), year].filter(Boolean).join(" | ")}
                           </div>
 
                           {summary ? <p className="oba-result-summary">{summary}</p> : null}
