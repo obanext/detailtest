@@ -1,4 +1,4 @@
-const BASE = process.env.WISE_BASE_URL || "https://bibliotheek-accept8.wise.oclc.org/restapi";
+const BASE = process.env.WISE_BASE_URL || "https://bibliotheek-accept1.wise.oclc.org/restapi";
 const BRANCH_ID = process.env.WISE_BRANCH_ID || "1000";
 const CLIENT_TYPE = process.env.WISE_CLIENT_TYPE || "default";
 const DEFAULT_PERSPECTIVE_ID = process.env.WISE_DEFAULT_PERSPECTIVE_ID || "3687";
