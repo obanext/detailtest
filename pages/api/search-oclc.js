@@ -430,10 +430,6 @@ export default async function handler(req, res) {
     `&filterAvailableTitles=${encodeURIComponent(filterAvailableTitles)}` +
     `&enableMultiSelectFaceting=true`;
 
-  if (selectedSort) {
-    titleSummaryUrl = appendParam(titleSummaryUrl, "sort", selectedSort);
-  }
-
   titleSummaryUrl = appendRepeatedParam(titleSummaryUrl, "facetFilter", selectedFacetFilters);
 
   const searchCall = await fetchSafe(titleSummaryUrl);
